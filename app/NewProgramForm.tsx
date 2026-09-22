@@ -5,22 +5,22 @@ import { useRouter } from "next/navigation";
 import { Field, Input, Select } from "@/components/ui/Form";
 import { Button } from "@/components/ui/Button";
 
-export default function NewProjectForm({ countries }: { countries: { id: string; name: string }[] }) {
+export default function NewProgramForm({ countries }: { countries: { id: string; name: string }[] }) {
   const router = useRouter();
-  const [name, setName] = useState("200-Bed Hospital — Worked Example");
+  const [name, setName] = useState("Regional Hospital System — Worked Example");
   const [countryId, setCountryId] = useState(countries[0]?.id ?? "ng");
   const [busy, setBusy] = useState(false);
 
-  async function createProject() {
+  async function createProgram() {
     setBusy(true);
     try {
-      const res = await fetch("/api/projects", {
+      const res = await fetch("/api/programs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, countryId }),
       });
       const row = await res.json();
-      router.push(`/projects/${row.id}`);
+      router.push(`/programs/${row.id}`);
     } finally {
       setBusy(false);
     }
@@ -28,7 +28,7 @@ export default function NewProjectForm({ countries }: { countries: { id: string;
 
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-surface p-4 shadow-sm">
-      <Field label="Project name" className="min-w-[220px] flex-1">
+      <Field label="Program name" className="min-w-[220px] flex-1">
         <Input value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <Field label="Country">
@@ -40,8 +40,8 @@ export default function NewProjectForm({ countries }: { countries: { id: string;
           ))}
         </Select>
       </Field>
-      <Button onClick={createProject} disabled={busy}>
-        {busy ? "Creating…" : "+ New project"}
+      <Button onClick={createProgram} disabled={busy}>
+        {busy ? "Creating…" : "+ New program"}
       </Button>
     </div>
   );

@@ -3,12 +3,12 @@ import { db } from "@/db";
 import { projects } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getProjectFull } from "@/lib/data";
-import { computeCost, computeSchedule, computeFeasibility, type ProjectSettings } from "@/lib/calc/engine";
+import { computeCost, computeSchedule, type ProjectSettings } from "@/lib/calc/engine";
 import { getCurrentUserFromRequest } from "@/lib/auth/session";
-import { requireProjectRole } from "@/lib/auth/permissions";
+import { requireFacilityRole } from "@/lib/auth/permissions";
 
 function toSettings(full: NonNullable<Awaited<ReturnType<typeof getProjectFull>>>): ProjectSettings {
-  const { project, country, region } = full;
+  const { project, program, country, region } = full;
   const costIndex = (country?.baseCostIndex ?? 1) * (1 + (region?.offsetPct ?? 0) / 100);
   return {
     aaceClass: project.aaceClass,
@@ -16,18 +16,13 @@ function toSettings(full: NonNullable<Awaited<ReturnType<typeof getProjectFull>>
     designFeePct: project.designFeePct,
     pmFeePct: project.pmFeePct,
     permitFeePct: project.permitFeePct,
-    landCostUsd: project.landCostUsd,
-    escalationPct: project.escalationPct,
+    escalationPct: program.escalationPct, // shared assumption, set on the parent program
     contingencyPctOverride: project.contingencyPctOverride,
     fastTrackPremiumPct: project.fastTrackPremiumPct,
     landMonths: project.landMonths,
     designMonths: project.designMonths,
     designPermitOverlapPct: project.designPermitOverlapPct,
     commissionMonths: project.commissionMonths,
-    fundedUsd: project.fundedUsd,
-    opexOverrideUsd: project.opexOverrideUsd,
-    opexPctOfCapexPerYear: project.opexPctOfCapexPerYear,
-    annualRevenueUsd: project.annualRevenueUsd,
     costIndex,
   };
 }
@@ -36,7 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const projectId = Number(id);
   const user = await getCurrentUserFromRequest(req);
-  const access = await requireProjectRole(user?.id ?? null, projectId, "viewer");
+  const access = await requireFacilityRole(user?.id ?? null, projectId, "viewer");
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   const full = await getProjectFull(projectId);
@@ -46,10 +41,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const settings = toSettings(full);
   const cost = computeCost(full.items, settings, full.aace);
   const schedule = computeSchedule(full.items, settings);
-  const feasibility = computeFeasibility(cost.grandTotal, settings);
 
   return NextResponse.json({
     project: full.project,
+    program: full.program,
     items: full.items,
     country: full.country,
     region: full.region,
@@ -61,7 +56,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     costIndex: settings.costIndex,
     cost,
     schedule,
-    feasibility,
     role: access.role,
   });
 }
@@ -70,16 +64,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
   const projectId = Number(id);
   const user = await getCurrentUserFromRequest(req);
-  const access = await requireProjectRole(user?.id ?? null, projectId, "editor");
+  const access = await requireFacilityRole(user?.id ?? null, projectId, "editor");
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   const body = await req.json();
   const allowed = [
-    "name", "author", "countryId", "regionId", "aaceClass", "deliveryStrategy",
-    "designFeePct", "pmFeePct", "permitFeePct", "landCostUsd", "escalationPct",
+    "name", "author", "phase", "aaceClass", "deliveryStrategy",
+    "designFeePct", "pmFeePct", "permitFeePct",
     "contingencyPctOverride", "fastTrackPremiumPct", "landMonths", "designMonths",
-    "designPermitOverlapPct", "commissionMonths", "startDate", "fundedUsd",
-    "opexOverrideUsd", "opexPctOfCapexPerYear", "annualRevenueUsd",
+    "designPermitOverlapPct", "commissionMonths", "startDate",
   ];
   const patch: Record<string, unknown> = {};
   for (const key of allowed) if (key in body) patch[key] = body[key];
@@ -93,7 +86,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params;
   const projectId = Number(id);
   const user = await getCurrentUserFromRequest(req);
-  const access = await requireProjectRole(user?.id ?? null, projectId, "owner");
+  const access = await requireFacilityRole(user?.id ?? null, projectId, "owner");
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   await db.delete(projects).where(eq(projects.id, projectId));

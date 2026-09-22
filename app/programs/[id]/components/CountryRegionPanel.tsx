@@ -3,10 +3,10 @@ import { Button } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
 import { fmtRelativeTime } from "@/components/ui/Metrics";
 import { isLiveFxRate } from "@/lib/fx";
-import type { CountryRow, ProjectRow } from "./types";
+import type { CountryRow, ProgramRow } from "./types";
 
 export function CountryRegionPanel({
-  project,
+  program,
   countries,
   costIndex,
   fx,
@@ -18,7 +18,7 @@ export function CountryRegionPanel({
   onChangeRegion,
   onRefreshFx,
 }: {
-  project: ProjectRow;
+  program: ProgramRow;
   countries: CountryRow[];
   costIndex: number;
   fx: number;
@@ -30,14 +30,17 @@ export function CountryRegionPanel({
   onChangeRegion: (regionId: number) => void;
   onRefreshFx: () => void;
 }) {
-  const country = countries.find((c) => c.id === project.countryId) ?? null;
+  const country = countries.find((c) => c.id === program.countryId) ?? null;
   const isLive = isLiveFxRate(fxSource);
 
   return (
-    <Panel title="01 — COUNTRY, CURRENCY & REGIONAL COST INDEX">
+    <Panel title="01 — SITE LOCATION, CURRENCY & REGIONAL COST INDEX">
+      <p className="mb-2 text-[11.5px] text-muted">
+        One site, one location — every facility in this program shares this country/region and cost index.
+      </p>
       <div className="mb-2 grid grid-cols-2 gap-3">
         <Field label="Country">
-          <Select value={project.countryId} onChange={(e) => onChangeCountry(e.target.value)}>
+          <Select value={program.countryId} onChange={(e) => onChangeCountry(e.target.value)}>
             {countries.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name} ({c.currencyCode})
@@ -46,7 +49,7 @@ export function CountryRegionPanel({
           </Select>
         </Field>
         <Field label="Region">
-          <Select value={project.regionId ?? country?.regions[0]?.id ?? ""} onChange={(e) => onChangeRegion(Number(e.target.value))}>
+          <Select value={program.regionId ?? country?.regions[0]?.id ?? ""} onChange={(e) => onChangeRegion(Number(e.target.value))}>
             {country?.regions.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name} ({r.offsetPct >= 0 ? "+" : ""}
@@ -78,7 +81,7 @@ export function CountryRegionPanel({
           {fxBusy ? "Fetching…" : "Fetch live FX for all currencies"}
         </Button>
         <span className="text-[10.5px] text-muted">
-          Rates are shared across every project — this is the only way any rate ever changes. No one can type one in.
+          Rates are shared across every program — this is the only way any rate ever changes. No one can type one in.
         </span>
       </div>
       {fxStatus && <p className="mt-1 text-[11px] text-muted">{fxStatus}</p>}

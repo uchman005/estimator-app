@@ -28,7 +28,7 @@ const VERDICT_COPY: Record<FeasibilityResult["verdict"], (f: FeasibilityResult) 
 export function FeasibilityPanel({ feasibility }: { feasibility: FeasibilityResult }) {
   const copy = VERDICT_COPY[feasibility.verdict](feasibility);
   return (
-    <Panel title="FEASIBILITY VERDICT">
+    <Panel title="PROGRAM FEASIBILITY VERDICT">
       <div className="mb-2 border-l-4 bg-paper-warm p-2.5" style={{ borderColor: copy.color }}>
         <div className="text-[13px] font-bold">{copy.title}</div>
         <div className="mt-0.5 text-[11.5px] text-muted">{copy.desc}</div>

@@ -4,12 +4,21 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { AppShell } from "@/components/AppShell";
 import type { AssemblyLite, MicroItemLite, SubItemLite } from "@/lib/calc/engine";
 
-type CatalogContextValue = {
+export interface ProgramCatalog {
+  id: number;
+  name: string;
+  role: "owner" | "editor" | "viewer";
   assemblies: AssemblyLite[];
   subItems: SubItemLite[];
   microItems: MicroItemLite[];
-  /** Fire a mutation, then reload the whole rate book so every page stays in sync. */
+}
+
+type CatalogContextValue = {
+  programs: ProgramCatalog[];
+  /** Fire a mutation, then reload every program's catalog so all three pages stay in sync. */
   call: (url: string, method: string, body?: unknown) => Promise<void>;
+  /** Reload every program's catalog with no mutation first — for actions (like an import) that already happened elsewhere. */
+  reload: () => Promise<void>;
 };
 
 const CatalogContext = createContext<CatalogContextValue | null>(null);
@@ -21,21 +30,35 @@ export function useCatalog() {
 }
 
 /**
- * Wraps every /catalog/* page: renders the app shell once (so the sidebar persists across the
- * main / sub / micro pages) and loads the rate book once, shared between them.
+ * Wraps every /catalog/* page: renders the app shell once (so the sidebar
+ * persists across the main / sub / micro pages) and loads every program's
+ * catalog once, shared between them — each program in the Rate Book is its
+ * own catalog now, matching /facilities' "open a program to manage what's
+ * inside it" pattern.
  */
 export function CatalogProvider({ currentUserEmail, children }: { currentUserEmail: string; children: React.ReactNode }) {
-  const [assemblies, setAssemblies] = useState<AssemblyLite[] | null>(null);
-  const [subItems, setSubItems] = useState<SubItemLite[] | null>(null);
-  const [microItems, setMicroItems] = useState<MicroItemLite[] | null>(null);
+  const [programs, setPrograms] = useState<ProgramCatalog[] | null>(null);
 
   const load = useCallback(async () => {
-    const [refRes, libRes] = await Promise.all([fetch("/api/reference"), fetch("/api/catalog/library")]);
-    const refData = await refRes.json();
-    const libData = await libRes.json();
-    setAssemblies(refData.assemblies);
-    setSubItems(libData.subItems);
-    setMicroItems(libData.microItems);
+    const progRes = await fetch("/api/programs");
+    const progData = await progRes.json();
+    const summaries: { id: number; name: string; role: "owner" | "editor" | "viewer" }[] = [
+      ...progData.owned,
+      ...progData.shared,
+    ];
+
+    const withCatalogs = await Promise.all(
+      summaries.map(async (p): Promise<ProgramCatalog> => {
+        const [refRes, libRes] = await Promise.all([
+          fetch(`/api/reference?programId=${p.id}`),
+          fetch(`/api/catalog/library?programId=${p.id}`),
+        ]);
+        const refData = await refRes.json();
+        const libData = await libRes.json();
+        return { id: p.id, name: p.name, role: p.role, assemblies: refData.assemblies ?? [], subItems: libData.subItems ?? [], microItems: libData.microItems ?? [] };
+      })
+    );
+    setPrograms(withCatalogs);
   }, []);
 
   useEffect(() => {
@@ -52,10 +75,10 @@ export function CatalogProvider({ currentUserEmail, children }: { currentUserEma
 
   return (
     <AppShell email={currentUserEmail}>
-      {!assemblies || !subItems || !microItems ? (
+      {!programs ? (
         <div className="p-10 text-sm text-muted">Loading rate book…</div>
       ) : (
-        <CatalogContext.Provider value={{ assemblies, subItems, microItems, call }}>{children}</CatalogContext.Provider>
+        <CatalogContext.Provider value={{ programs, call, reload: load }}>{children}</CatalogContext.Provider>
       )}
     </AppShell>
   );

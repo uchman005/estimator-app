@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { users, projectCollaborators } from "@/db/schema";
+import { users, programCollaborators } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession, SESSION_COOKIE } from "@/lib/auth/session";
@@ -21,9 +21,9 @@ export async function POST(req: NextRequest) {
 
   // Link any invites sent to this email before the account existed.
   await db
-    .update(projectCollaborators)
+    .update(programCollaborators)
     .set({ userId: user.id, status: "accepted" })
-    .where(and(eq(projectCollaborators.invitedEmail, email), eq(projectCollaborators.status, "pending")));
+    .where(and(eq(programCollaborators.invitedEmail, email), eq(programCollaborators.status, "pending")));
 
   const { token, expiresAt } = await createSession(user.id);
   const res = NextResponse.json({ id: user.id, email: user.email, name: user.name }, { status: 201 });

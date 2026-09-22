@@ -36,9 +36,9 @@ export function CollaboratorsPanel({
   return (
     <Panel title="08 — SHARING & COLLABORATORS" eyebrow="owner only">
       <p className="mb-2 text-[11.5px] text-muted">
-        Editors can change everything an owner can except delete the project or manage who has access. Viewers can see the
-        estimate but can&apos;t change anything. Inviting an email that hasn&apos;t signed up yet links automatically the
-        moment they create an account.
+        A grant here covers every facility in this program. Editors can change everything an owner can except delete the
+        program or manage who has access. Viewers can see the full estimate but can&apos;t change anything. Inviting an
+        email that hasn&apos;t signed up yet links automatically the moment they create an account.
       </p>
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <Field label="Invite by email" className="min-w-[220px] flex-1">

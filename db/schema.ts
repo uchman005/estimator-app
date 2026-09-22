@@ -7,7 +7,7 @@ import {
 import { sql } from "drizzle-orm";
 
 /* -------------------------------------------------------------------- */
-/*  Users, sessions, project collaborators                              */
+/*  Users, sessions                                                      */
 /* -------------------------------------------------------------------- */
 
 export const users = sqliteTable("users", {
@@ -26,23 +26,6 @@ export const sessions = sqliteTable("sessions", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   expiresAt: text("expires_at").notNull(),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`(CURRENT_TIMESTAMP)`),
-});
-
-// A row exists whether or not the invited person has an account yet.
-// invitedEmail is always set; userId is filled in once that email signs up
-// or, if the account already existed, immediately on invite.
-export const projectCollaborators = sqliteTable("project_collaborators", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  projectId: integer("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
-  invitedEmail: text("invited_email").notNull(), // lowercase
-  role: text("role").notNull().default("viewer"), // 'viewer' | 'editor'
-  status: text("status").notNull().default("pending"), // 'pending' | 'accepted'
   createdAt: text("created_at")
     .notNull()
     .default(sql`(CURRENT_TIMESTAMP)`),
@@ -156,6 +139,13 @@ export const spaceTemplateItems = sqliteTable("space_template_items", {
 
 export const assemblies = sqliteTable("assemblies", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  // Every assembly ("Main Item") belongs to exactly one program's catalog —
+  // see lib/catalogClone.ts for how a program's catalog is cloned into
+  // another program (including the shared template) rather than shared
+  // directly.
+  programId: integer("program_id")
+    .notNull()
+    .references(() => programs.id, { onDelete: "cascade" }),
   classNodeId: integer("class_node_id")
     .notNull()
     .references(() => classNodes.id),
@@ -245,9 +235,13 @@ export const macroItems = sqliteTable("macro_items", {
 });
 
 // Library entry — NOT owned by a macro-item. Reusable across as many
-// macro-items (in any assembly) as want to assemble it in.
+// macro-items (in any assembly) as want to assemble it in — WITHIN THE SAME
+// PROGRAM's catalog.
 export const subItems = sqliteTable("sub_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  programId: integer("program_id")
+    .notNull()
+    .references(() => programs.id, { onDelete: "cascade" }),
   name: text("name").notNull(), // e.g. 'Theatre Envelope'
   sourceNote: text("source_note"),
   // Labour to assemble/fit the joined micro-items into this sub-item as a
@@ -275,9 +269,12 @@ export const macroItemSubItems = sqliteTable("macro_item_sub_items", {
 });
 
 // Library entry — NOT owned by a sub-item. Reusable across as many
-// sub-items as want to assemble it in.
+// sub-items as want to assemble it in — WITHIN THE SAME PROGRAM's catalog.
 export const microItems = sqliteTable("micro_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  programId: integer("program_id")
+    .notNull()
+    .references(() => programs.id, { onDelete: "cascade" }),
   name: text("name").notNull(), // e.g. 'Theatre door (fire-rated)' — the actual priced leaf
   unit: text("unit").notNull(), // its OWN unit — 'door', 'm²', 'beam'
   sourceNote: text("source_note"),
@@ -310,13 +307,20 @@ export const microItemRates = sqliteTable("micro_item_rates", {
 });
 
 /* -------------------------------------------------------------------- */
-/*  Projects & line items                                               */
+/*  Programs: the elevated level — a site/campus/portfolio that owns    */
+/*  location, funding, feasibility and sharing for all of its           */
+/*  facilities (see mighty-squishing-kettle.md)                        */
 /* -------------------------------------------------------------------- */
 
-export const projects = sqliteTable("projects", {
+export const programs = sqliteTable("programs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   author: text("author"),
+  // The one seeded "Default Starter Catalog" program (see db/seed.ts and
+  // lib/catalogClone.ts). Hidden from dashboards/facility listings; anyone
+  // can IMPORT from it into their own program's catalog regardless of
+  // ownership, since it's the shared starting point, not private data.
+  isTemplate: integer("is_template", { mode: "boolean" }).notNull().default(false),
   ownerId: integer("owner_id")
     .notNull()
     .references(() => users.id),
@@ -324,6 +328,55 @@ export const projects = sqliteTable("projects", {
     .notNull()
     .references(() => countries.id),
   regionId: integer("region_id").references(() => regions.id),
+
+  // funding & operations — aggregate across every facility in the program
+  landCostUsd: real("land_cost_usd").notNull().default(0),
+  escalationPct: real("escalation_pct").notNull().default(10),
+  fundedUsd: real("funded_usd").notNull().default(0),
+  opexOverrideUsd: real("opex_override_usd").notNull().default(0),
+  opexPctOfCapexPerYear: real("opex_pct_of_capex_per_year").notNull().default(8),
+  annualRevenueUsd: real("annual_revenue_usd").notNull().default(0),
+
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+// Mirrors projectCollaborators exactly, one level up: a single grant here
+// governs every facility inside the program.
+export const programCollaborators = sqliteTable("program_collaborators", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  programId: integer("program_id")
+    .notNull()
+    .references(() => programs.id, { onDelete: "cascade" }),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  invitedEmail: text("invited_email").notNull(), // lowercase
+  role: text("role").notNull().default("viewer"), // 'viewer' | 'editor'
+  status: text("status").notNull().default("pending"), // 'pending' | 'accepted'
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(CURRENT_TIMESTAMP)`),
+});
+
+/* -------------------------------------------------------------------- */
+/*  Projects (facilities) & line items                                  */
+/* -------------------------------------------------------------------- */
+
+// A "facility" — one building (hospital, clinic, housing block, mortuary...)
+// inside a Program. Owns its own BOQ, hospital generator, AACE maturity, soft
+// costs and schedule assumptions. Location, funding, feasibility and sharing
+// all live one level up, on programs — see the comment above that table.
+export const projects = sqliteTable("projects", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  programId: integer("program_id")
+    .notNull()
+    .references(() => programs.id, { onDelete: "cascade" }),
+  phase: text("phase").notNull().default("phase_1"), // 'phase_1' | 'phase_2' | 'phase_3' — Infrastructure Commissioning / Improvement / Expansion
+  name: text("name").notNull(),
+  author: text("author"),
   aaceClass: integer("aace_class").notNull().default(5),
   deliveryStrategy: text("delivery_strategy").notNull().default("phased"), // 'phased' | 'parallel'
 
@@ -331,8 +384,6 @@ export const projects = sqliteTable("projects", {
   designFeePct: real("design_fee_pct").notNull().default(8),
   pmFeePct: real("pm_fee_pct").notNull().default(6),
   permitFeePct: real("permit_fee_pct").notNull().default(2),
-  landCostUsd: real("land_cost_usd").notNull().default(0),
-  escalationPct: real("escalation_pct").notNull().default(10),
   contingencyPctOverride: real("contingency_pct_override"),
   fastTrackPremiumPct: real("fast_track_premium_pct").notNull().default(12),
 
@@ -342,12 +393,6 @@ export const projects = sqliteTable("projects", {
   designPermitOverlapPct: real("design_permit_overlap_pct").notNull().default(50),
   commissionMonths: real("commission_months").notNull().default(2),
   startDate: text("start_date"),
-
-  // funding & operations
-  fundedUsd: real("funded_usd").notNull().default(0),
-  opexOverrideUsd: real("opex_override_usd").notNull().default(0),
-  opexPctOfCapexPerYear: real("opex_pct_of_capex_per_year").notNull().default(8),
-  annualRevenueUsd: real("annual_revenue_usd").notNull().default(0),
 
   createdAt: text("created_at")
     .notNull()

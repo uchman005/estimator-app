@@ -17,7 +17,11 @@ import {
   subItemMicroItems,
   microItems,
   microItemRates,
+  users,
+  programs,
 } from "./schema";
+import { hashPassword } from "../lib/auth/password";
+import { randomBytes } from "crypto";
 
 /**
  * Idempotent-ish seed: safe to re-run against a fresh DB (db:setup does
@@ -155,6 +159,28 @@ async function main() {
     idByCode[n.code] = row.id;
   }
 
+  console.log("Seeding the template catalog owner...");
+  // Every assembly/sub-item/micro-item belongs to a program's catalog (see
+  // lib/catalogClone.ts) — there's no "no program" catalog anymore. This
+  // seed creates ONE program, flagged isTemplate, to own the starter catalog
+  // below; every real program a user creates afterward gets its own cloned
+  // copy of it (POST /api/programs), and anyone can import individual items
+  // from it regardless of ownership. The owning user is never meant to log
+  // in — its password is an unusable random value.
+  const [templateUser] = await db
+    .insert(users)
+    .values({
+      email: "catalog-template@system.local",
+      passwordHash: hashPassword(randomBytes(32).toString("hex")),
+      name: "Catalog Template (system)",
+    })
+    .returning();
+  const [templateProgram] = await db
+    .insert(programs)
+    .values({ name: "Default Starter Catalog", ownerId: templateUser.id, countryId: "ng", isTemplate: true })
+    .returning();
+  const TEMPLATE_PROGRAM_ID = templateProgram.id;
+
   console.log("Seeding assemblies + rates/variants...");
 
   type TierSpec = { code: string; name: string; unit: string; classCode: string; baseDur: number; baseSize: number; exp: number; phase: string; rates: [number, number, number] };
@@ -184,6 +210,7 @@ async function main() {
     const [row] = await db
       .insert(assemblies)
       .values({
+        programId: TEMPLATE_PROGRAM_ID,
         classNodeId: idByCode[a.classCode],
         name: a.name,
         slug: a.code,
@@ -208,6 +235,7 @@ async function main() {
     const [row] = await db
       .insert(assemblies)
       .values({
+        programId: TEMPLATE_PROGRAM_ID,
         classNodeId: idByCode["Z9000"],
         name: "Custom / Other",
         slug: "custom",
@@ -231,7 +259,7 @@ async function main() {
   // Variant-based assemblies: walls, windows, doors
   const [wallRow] = await db
     .insert(assemblies)
-    .values({ classNodeId: idByCode["B2010"], name: "Exterior Walls", slug: "ext_wall", unit: "m² wall", pricingMode: "variant", hasVariants: true, baseDurationMonths: 3, baseSize: 1500, durationExponent: 0.4, phase: "vertical" })
+    .values({ programId: TEMPLATE_PROGRAM_ID, classNodeId: idByCode["B2010"], name: "Exterior Walls", slug: "ext_wall", unit: "m² wall", pricingMode: "variant", hasVariants: true, baseDurationMonths: 3, baseSize: 1500, durationExponent: 0.4, phase: "vertical" })
     .returning();
   assemblyIdByCode["ext_wall"] = wallRow.id;
   await db.insert(assemblyVariants).values([
@@ -243,7 +271,7 @@ async function main() {
 
   const [winRow] = await db
     .insert(assemblies)
-    .values({ classNodeId: idByCode["B2020"], name: "Exterior Windows", slug: "ext_window", unit: "m² glazing", pricingMode: "variant", hasVariants: true, baseDurationMonths: 2, baseSize: 500, durationExponent: 0.3, phase: "vertical" })
+    .values({ programId: TEMPLATE_PROGRAM_ID, classNodeId: idByCode["B2020"], name: "Exterior Windows", slug: "ext_window", unit: "m² glazing", pricingMode: "variant", hasVariants: true, baseDurationMonths: 2, baseSize: 500, durationExponent: 0.3, phase: "vertical" })
     .returning();
   assemblyIdByCode["ext_window"] = winRow.id;
   await db.insert(assemblyVariants).values([
@@ -255,7 +283,7 @@ async function main() {
 
   const [doorRow] = await db
     .insert(assemblies)
-    .values({ classNodeId: idByCode["B2030"], name: "Exterior Doors", slug: "ext_door", unit: "door", pricingMode: "variant", hasVariants: true, baseDurationMonths: 1, baseSize: 10, durationExponent: 0.2, phase: "vertical" })
+    .values({ programId: TEMPLATE_PROGRAM_ID, classNodeId: idByCode["B2030"], name: "Exterior Doors", slug: "ext_door", unit: "door", pricingMode: "variant", hasVariants: true, baseDurationMonths: 1, baseSize: 10, durationExponent: 0.2, phase: "vertical" })
     .returning();
   assemblyIdByCode["ext_door"] = doorRow.id;
   await db.insert(assemblyVariants).values([
@@ -385,6 +413,7 @@ async function main() {
     const [row] = await db
       .insert(assemblies)
       .values({
+        programId: TEMPLATE_PROGRAM_ID,
         classNodeId: idByCode[item.classCode],
         name: item.name,
         slug: item.code,
@@ -417,6 +446,7 @@ async function main() {
         const [subRow] = await db
           .insert(subItems)
           .values({
+            programId: TEMPLATE_PROGRAM_ID,
             name: sub.name, sourceNote: sub.note ?? null,
             labourBasic: sub.labour?.[0] ?? 0, labourStandard: sub.labour?.[1] ?? 0, labourPremium: sub.labour?.[2] ?? 0,
           })
@@ -431,7 +461,7 @@ async function main() {
           // $/unit-rate item).
           const [microRow] = await db
             .insert(microItems)
-            .values({ name: micro.name, unit: micro.unit, sourceNote: micro.note })
+            .values({ programId: TEMPLATE_PROGRAM_ID, name: micro.name, unit: micro.unit, sourceNote: micro.note })
             .returning();
           await db.insert(subItemMicroItems).values({ subItemId: subRow.id, microItemId: microRow.id, quantity: micro.qty ?? 1, sortOrder: mi });
           await db.insert(microItemRates).values([

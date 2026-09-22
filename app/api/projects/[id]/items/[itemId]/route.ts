@@ -3,12 +3,12 @@ import { db } from "@/db";
 import { projectItems } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getCurrentUserFromRequest } from "@/lib/auth/session";
-import { requireProjectRole } from "@/lib/auth/permissions";
+import { requireFacilityRole } from "@/lib/auth/permissions";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; itemId: string }> }) {
   const { id, itemId } = await params;
   const user = await getCurrentUserFromRequest(req);
-  const access = await requireProjectRole(user?.id ?? null, Number(id), "editor");
+  const access = await requireFacilityRole(user?.id ?? null, Number(id), "editor");
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   const body = await req.json();
@@ -26,7 +26,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string; itemId: string }> }) {
   const { id, itemId } = await params;
   const user = await getCurrentUserFromRequest(req);
-  const access = await requireProjectRole(user?.id ?? null, Number(id), "editor");
+  const access = await requireFacilityRole(user?.id ?? null, Number(id), "editor");
   if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
 
   await db.delete(projectItems).where(eq(projectItems.id, Number(itemId)));

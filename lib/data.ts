@@ -16,19 +16,20 @@ import {
   currencies,
   fxRates,
   aaceClasses,
+  programs,
   projects,
   projectItems,
 } from "@/db/schema";
 import type { AssemblyLite, ProjectItemLite, Tier, MacroItemLite, SubItemLite, MicroItemLite } from "@/lib/calc/engine";
 
-/** The full reusable library — every sub-item and micro-item that exists,
- * fully assembled with their own components/rates, independent of which
- * (if any) macro-item currently assembles them in. Used both to build
- * AssemblyLite.macroItems and to power the standalone Sub-Items/Micro-Items
- * Library management panels, which need to browse and edit these without
- * going through any one assembly. */
-export async function getComponentLibrary() {
-  const microItemRows = await db.select().from(microItems);
+/** The full reusable library for ONE program — every sub-item and micro-item
+ * that program's catalog owns, fully assembled with their own
+ * components/rates, independent of which (if any) macro-item currently
+ * assembles them in. Used both to build AssemblyLite.macroItems and to power
+ * the standalone Sub-Items/Micro-Items Library management panels, which need
+ * to browse and edit these without going through any one assembly. */
+export async function getComponentLibrary(programId: number) {
+  const microItemRows = await db.select().from(microItems).where(eq(microItems.programId, programId));
   const microItemIds = microItemRows.map((m) => m.id);
   const microRateRows = microItemIds.length
     ? await db.select().from(microItemRates).where(inArray(microItemRates.microItemId, microItemIds))
@@ -45,7 +46,7 @@ export async function getComponentLibrary() {
     microItemsById.set(m.id, { id: m.id, name: m.name, unit: m.unit, rates });
   }
 
-  const subItemRows = await db.select().from(subItems);
+  const subItemRows = await db.select().from(subItems).where(eq(subItems.programId, programId));
   const subItemIds = subItemRows.map((s) => s.id);
   const subMicroJoinRows = subItemIds.length
     ? await db.select().from(subItemMicroItems).where(inArray(subItemMicroItems.subItemId, subItemIds))
@@ -72,7 +73,7 @@ export async function getComponentLibrary() {
   return { microItemsById, subItemsById, microItemRows, subItemRows };
 }
 
-export async function getAllAssembliesLite(): Promise<AssemblyLite[]> {
+export async function getAllAssembliesLite(programId: number): Promise<AssemblyLite[]> {
   const rows = await db
     .select({
       id: assemblies.id,
@@ -89,7 +90,8 @@ export async function getAllAssembliesLite(): Promise<AssemblyLite[]> {
       className: classNodes.name,
     })
     .from(assemblies)
-    .leftJoin(classNodes, eq(assemblies.classNodeId, classNodes.id));
+    .leftJoin(classNodes, eq(assemblies.classNodeId, classNodes.id))
+    .where(eq(assemblies.programId, programId));
 
   const ids = rows.map((r) => r.id);
   const tierRows = ids.length
@@ -104,7 +106,7 @@ export async function getAllAssembliesLite(): Promise<AssemblyLite[]> {
     ? await db.select().from(macroItemSubItems).where(inArray(macroItemSubItems.macroItemId, macroItemIds))
     : [];
 
-  const { subItemsById } = await getComponentLibrary();
+  const { subItemsById } = await getComponentLibrary(programId);
 
   return rows.map((r) => {
     const tierRates: Partial<Record<Tier, number>> = {};
@@ -156,14 +158,14 @@ export async function getAllAssembliesLite(): Promise<AssemblyLite[]> {
   });
 }
 
-export async function getReferenceData() {
+export async function getReferenceData(programId: number) {
   const [countryRows, regionRows, currencyRows, fxRows, aaceRows, assemblyList] = await Promise.all([
     db.select().from(countries),
     db.select().from(regions),
     db.select().from(currencies),
     db.select().from(fxRates),
     db.select().from(aaceClasses),
-    getAllAssembliesLite(),
+    getAllAssembliesLite(programId),
   ]);
 
   // latest FX per currency
@@ -192,15 +194,36 @@ export async function getReferenceData() {
   };
 }
 
-export async function getProjectFull(projectId: number) {
-  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-  if (!project) return null;
+/** The one seeded "Default Starter Catalog" program (see db/seed.ts,
+ * lib/catalogClone.ts) — every new program's catalog is cloned from it, and
+ * anyone can import from it regardless of ownership. */
+export async function getTemplateProgramId(): Promise<number | null> {
+  const [row] = await db.select({ id: programs.id }).from(programs).where(eq(programs.isTemplate, true));
+  return row?.id ?? null;
+}
 
-  const items = await db.select().from(projectItems).where(eq(projectItems.projectId, projectId));
-  const assemblyList = await getAllAssembliesLite();
-  const assemblyById = new Map(assemblyList.map((a) => [a.id, a]));
+/** Country/region/currency/FX for a given location — shared by a single
+ * facility (via its parent program) and by the program itself, since
+ * location now lives only on programs. */
+async function resolveLocation(countryId: string, regionId: number | null) {
+  const [country] = await db.select().from(countries).where(eq(countries.id, countryId));
+  const countryRegions = await db.select().from(regions).where(eq(regions.countryId, countryId));
+  const region = regionId != null ? countryRegions.find((r) => r.id === regionId) ?? null : null;
+  const currencyRow = country ? (await db.select().from(currencies).where(eq(currencies.code, country.currencyCode)))[0] : null;
+  const fxRows = country ? await db.select().from(fxRates).where(eq(fxRates.currencyCode, country.currencyCode)) : [];
+  const latestFx = fxRows.sort((a, b) => new Date(b.fetchedAt).getTime() - new Date(a.fetchedAt).getTime())[0];
+  return {
+    country,
+    region,
+    currency: currencyRow,
+    fx: latestFx?.rateToUsd ?? 1,
+    fxFetchedAt: latestFx?.fetchedAt ?? null,
+    fxSource: latestFx?.source ?? null,
+  };
+}
 
-  const itemsLite: (ProjectItemLite & { id: number })[] = items.map((it) => ({
+function toItemsLite(items: (typeof projectItems.$inferSelect)[], assemblyById: Map<number, AssemblyLite>): (ProjectItemLite & { id: number })[] {
+  return items.map((it) => ({
     id: it.id,
     assembly: it.assemblyId != null ? assemblyById.get(it.assemblyId) ?? null : null,
     customLabel: it.customLabel,
@@ -213,25 +236,62 @@ export async function getProjectFull(projectId: number) {
     isAddon: it.isAddon,
     isIncluded: it.isIncluded,
   }));
+}
 
-  const [country] = await db.select().from(countries).where(eq(countries.id, project.countryId));
-  const countryRegions = await db.select().from(regions).where(eq(regions.countryId, project.countryId));
-  const region = project.regionId != null ? countryRegions.find((r) => r.id === project.regionId) ?? null : null;
-  const currencyRow = country ? (await db.select().from(currencies).where(eq(currencies.code, country.currencyCode)))[0] : null;
-  const fxRows = country ? await db.select().from(fxRates).where(eq(fxRates.currencyCode, country.currencyCode)) : [];
-  const latestFx = fxRows.sort((a, b) => new Date(b.fetchedAt).getTime() - new Date(a.fetchedAt).getTime())[0];
+/** One facility (a `projects` row) plus its parent program — a facility no
+ * longer carries its own location, so it's resolved via the program. */
+export async function getProjectFull(projectId: number) {
+  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+  if (!project) return null;
+  const [program] = await db.select().from(programs).where(eq(programs.id, project.programId));
+  if (!program) return null;
 
+  const items = await db.select().from(projectItems).where(eq(projectItems.projectId, projectId));
+  const assemblyList = await getAllAssembliesLite(project.programId);
+  const assemblyById = new Map(assemblyList.map((a) => [a.id, a]));
+  const itemsLite = toItemsLite(items, assemblyById);
+
+  const location = await resolveLocation(program.countryId, program.regionId);
   const [aaceRow] = await db.select().from(aaceClasses).where(eq(aaceClasses.classNumber, project.aaceClass));
 
   return {
     project,
+    program,
     items: itemsLite,
-    country,
-    region,
-    currency: currencyRow,
-    fx: latestFx?.rateToUsd ?? 1,
-    fxFetchedAt: latestFx?.fetchedAt ?? null,
-    fxSource: latestFx?.source ?? null,
+    ...location,
     aace: aaceRow,
   };
+}
+
+/** A program and every facility inside it, each with its own raw items
+ * (uncomputed — the caller runs computeCost/computeSchedule per facility and
+ * computeProgramCapex/computeFeasibility across all of them, same division
+ * of labour as the single-facility route: data.ts assembles rows, the route
+ * does the math). */
+export async function getProgramFull(programId: number) {
+  const [program] = await db.select().from(programs).where(eq(programs.id, programId));
+  if (!program) return null;
+
+  const facilityRows = await db.select().from(projects).where(eq(projects.programId, programId));
+  const facilityIds = facilityRows.map((p) => p.id);
+  const allItems = facilityIds.length
+    ? await db.select().from(projectItems).where(inArray(projectItems.projectId, facilityIds))
+    : [];
+  const assemblyList = await getAllAssembliesLite(programId);
+  const assemblyById = new Map(assemblyList.map((a) => [a.id, a]));
+  const aaceRows = await db.select().from(aaceClasses);
+  const aaceByNumber = new Map(aaceRows.map((a) => [a.classNumber, a]));
+
+  const facilities = facilityRows.map((project) => ({
+    project,
+    items: toItemsLite(
+      allItems.filter((it) => it.projectId === project.id),
+      assemblyById
+    ),
+    aace: aaceByNumber.get(project.aaceClass),
+  }));
+
+  const location = await resolveLocation(program.countryId, program.regionId);
+
+  return { program, facilities, ...location };
 }

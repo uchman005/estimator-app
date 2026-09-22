@@ -2,44 +2,64 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   computeCost,
   computeSchedule,
-  computeFeasibility,
   type AssemblyLite,
   type ProjectItemLite,
   type ProjectSettings,
   type Tier,
 } from "@/lib/calc/engine";
-import type { ItemRow, ProjectRow, ReferenceData, HospitalGenInfo, CollaboratorRow } from "./components/types";
+import type { ItemRow, ProjectRow, ReferenceData, HospitalGenInfo } from "./components/types";
 
 interface ApiItem extends ItemRow {
   assembly: AssemblyLite | null;
 }
 
+interface ProgramSummary {
+  id: number;
+  name: string;
+  escalationPct: number;
+}
+
+interface CountrySummary {
+  id: string;
+  name: string;
+  currencyCode: string;
+}
+
 export function useProjectEditor(projectId: number) {
   const [ref, setRef] = useState<ReferenceData | null>(null);
   const [project, setProject] = useState<ProjectRow | null>(null);
+  const [program, setProgram] = useState<ProgramSummary | null>(null);
+  const [country, setCountry] = useState<CountrySummary | null>(null);
+  const [fx, setFx] = useState(1);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [role, setRole] = useState<"owner" | "editor" | "viewer" | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [genInfo, setGenInfo] = useState<HospitalGenInfo | null>(null);
   const [genBusy, setGenBusy] = useState(false);
-  const [fxStatus, setFxStatus] = useState("");
-  const [fxBusy, setFxBusy] = useState(false);
-  const [collaborators, setCollaborators] = useState<CollaboratorRow[]>([]);
+  const [costIndex, setCostIndex] = useState(1);
 
   const load = useCallback(async () => {
-    const [refRes, projRes] = await Promise.all([fetch("/api/reference"), fetch(`/api/projects/${projectId}`)]);
+    // Sequential, not parallel: the reference data (specifically its
+    // assemblies) is scoped to this facility's program's own catalog, and we
+    // don't know which program that is until the project itself loads.
+    const projRes = await fetch(`/api/projects/${projectId}`);
     if (!projRes.ok) {
       const data = await projRes.json().catch(() => ({}));
       setAccessError(data.error || `Could not load this project (HTTP ${projRes.status}).`);
       setLoading(false);
       return;
     }
-    const refData: ReferenceData = await refRes.json();
     const projData = await projRes.json();
+    const refRes = await fetch(`/api/reference?programId=${projData.program.id}`);
+    const refData: ReferenceData = await refRes.json();
     setRef(refData);
     setProject(projData.project);
+    setProgram(projData.program);
+    setCountry(projData.country);
+    setFx(projData.fx);
     setRole(projData.role);
+    setCostIndex(projData.costIndex);
     setItems(
       (projData.items as ApiItem[]).map((it) => ({
         id: it.id,
@@ -58,18 +78,9 @@ export function useProjectEditor(projectId: number) {
     setLoading(false);
   }, [projectId]);
 
-  const loadCollaborators = useCallback(async () => {
-    const res = await fetch(`/api/projects/${projectId}/collaborators`);
-    if (res.ok) setCollaborators(await res.json());
-  }, [projectId]);
-
   useEffect(() => {
     load();
   }, [load]);
-
-  useEffect(() => {
-    if (role === "owner") loadCollaborators();
-  }, [role, loadCollaborators]);
 
   const assemblyById = useMemo(() => {
     const m = new Map<number, AssemblyLite>();
@@ -86,11 +97,6 @@ export function useProjectEditor(projectId: number) {
     return out;
   }, [ref]);
 
-  const country = useMemo(() => ref?.countries.find((c) => c.id === project?.countryId) ?? null, [ref, project]);
-  const region = useMemo(
-    () => country?.regions.find((r) => r.id === project?.regionId) ?? country?.regions[0] ?? null,
-    [country, project]
-  );
   const aace = useMemo(() => ref?.aaceClasses.find((a) => a.classNumber === project?.aaceClass) ?? null, [ref, project]);
 
   const itemsLite: ProjectItemLite[] = useMemo(
@@ -111,33 +117,28 @@ export function useProjectEditor(projectId: number) {
     [items, assemblyById]
   );
 
+  // Escalation is a shared program assumption, not a local input — see program.escalationPct.
   const settings: ProjectSettings | null = useMemo(() => {
-    if (!project || !country) return null;
+    if (!project || !program) return null;
     return {
       aaceClass: project.aaceClass,
       deliveryStrategy: project.deliveryStrategy,
       designFeePct: project.designFeePct,
       pmFeePct: project.pmFeePct,
       permitFeePct: project.permitFeePct,
-      landCostUsd: project.landCostUsd,
-      escalationPct: project.escalationPct,
+      escalationPct: program.escalationPct,
       contingencyPctOverride: project.contingencyPctOverride,
       fastTrackPremiumPct: project.fastTrackPremiumPct,
       landMonths: project.landMonths,
       designMonths: project.designMonths,
       designPermitOverlapPct: project.designPermitOverlapPct,
       commissionMonths: project.commissionMonths,
-      fundedUsd: project.fundedUsd,
-      opexOverrideUsd: project.opexOverrideUsd,
-      opexPctOfCapexPerYear: project.opexPctOfCapexPerYear,
-      annualRevenueUsd: project.annualRevenueUsd,
-      costIndex: country.baseCostIndex * (1 + (region?.offsetPct ?? 0) / 100),
+      costIndex,
     };
-  }, [project, country, region]);
+  }, [project, program, costIndex]);
 
   const cost = useMemo(() => (settings && aace ? computeCost(itemsLite, settings, aace) : null), [itemsLite, settings, aace]);
   const schedule = useMemo(() => (settings ? computeSchedule(itemsLite, settings) : null), [itemsLite, settings]);
-  const feasibility = useMemo(() => (settings && cost ? computeFeasibility(cost.grandTotal, settings) : null), [settings, cost]);
 
   function patchProject(patch: Partial<ProjectRow>) {
     setProject((p) => (p ? { ...p, ...patch } : p));
@@ -183,49 +184,11 @@ export function useProjectEditor(projectId: number) {
       setGenBusy(false);
     }
   }
-  async function refreshFx() {
-    setFxBusy(true);
-    setFxStatus("Fetching…");
-    try {
-      const res = await fetch("/api/fx/refresh", { method: "POST" });
-      const data = await res.json();
-      if (data.ok && !data.skipped) setFxStatus(`Updated ${data.updated?.length ?? 0} currencies at ${new Date(data.fetchedAt).toLocaleTimeString()}`);
-      else if (data.skipped) setFxStatus(data.reason);
-      else setFxStatus(data.error || "Fetch failed");
-      await load();
-    } finally {
-      setFxBusy(false);
-    }
-  }
-
-  async function inviteCollaborator(email: string, collabRole: "viewer" | "editor") {
-    const res = await fetch(`/api/projects/${projectId}/collaborators`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, role: collabRole }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Could not send invite.");
-    await loadCollaborators();
-  }
-  async function changeCollaboratorRole(collabId: number, collabRole: "viewer" | "editor") {
-    setCollaborators((arr) => arr.map((c) => (c.id === collabId ? { ...c, role: collabRole } : c)));
-    await fetch(`/api/projects/${projectId}/collaborators/${collabId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role: collabRole }),
-    });
-  }
-  async function removeCollaborator(collabId: number) {
-    setCollaborators((arr) => arr.filter((c) => c.id !== collabId));
-    await fetch(`/api/projects/${projectId}/collaborators/${collabId}`, { method: "DELETE" });
-  }
 
   return {
-    ref, project, items, loading, accessError, role, genInfo, genBusy, fxStatus, fxBusy, collaborators,
-    assemblyById, groupedAssemblies, country, region, aace,
-    settings, cost, schedule, feasibility,
-    patchProject, patchItem, addItem, deleteItem, runGenerator, refreshFx,
-    inviteCollaborator, changeCollaboratorRole, removeCollaborator,
+    ref, project, program, country, fx, items, loading, accessError, role, genInfo, genBusy, costIndex,
+    assemblyById, groupedAssemblies, aace,
+    settings, cost, schedule,
+    patchProject, patchItem, addItem, deleteItem, runGenerator,
   };
 }

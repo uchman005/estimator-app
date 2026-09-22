@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { microItems, microItemRates } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getCurrentUserFromRequest } from "@/lib/auth/session";
+import { requireMicroItemRole } from "@/lib/auth/permissions";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const microItemId = Number(id);
+  const user = await getCurrentUserFromRequest(req);
+  const access = await requireMicroItemRole(user?.id ?? null, microItemId, "editor");
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+
   const body = await req.json();
 
   const fieldPatch: Record<string, unknown> = {};
@@ -29,8 +35,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await db.delete(microItems).where(eq(microItems.id, Number(id)));
+  const microItemId = Number(id);
+  const user = await getCurrentUserFromRequest(req);
+  const access = await requireMicroItemRole(user?.id ?? null, microItemId, "editor");
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+
+  await db.delete(microItems).where(eq(microItems.id, microItemId));
   return NextResponse.json({ ok: true });
 }

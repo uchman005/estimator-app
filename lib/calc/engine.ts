@@ -80,13 +80,19 @@ export interface AaceClass {
   description: string;
 }
 
+// A facility's own cost/schedule settings. Note landCostUsd/funding/opex/
+// revenue are NOT here — those live one level up, on the Program (see
+// FundingSettings below and computeProgramCapex) — a facility doesn't know
+// about land or money, only its own construction, soft costs and schedule.
+// escalationPct is still here because escalation is computed against each
+// facility's own schedule length, but its *value* is read from the parent
+// Program at call time (one shared assumption for every facility on the site).
 export interface ProjectSettings {
   aaceClass: number;
   deliveryStrategy: Strategy;
   designFeePct: number;
   pmFeePct: number;
   permitFeePct: number;
-  landCostUsd: number;
   escalationPct: number;
   contingencyPctOverride: number | null;
   fastTrackPremiumPct: number;
@@ -94,11 +100,17 @@ export interface ProjectSettings {
   designMonths: number;
   designPermitOverlapPct: number;
   commissionMonths: number;
+  costIndex: number; // resolved: country.baseCostIndex * (1 + region.offsetPct/100)
+}
+
+// The subset of Program fields computeFeasibility needs — kept separate from
+// ProjectSettings so the same function works whether the caller is passing a
+// facility's own settings (it never does anymore) or a Program's.
+export interface FundingSettings {
   fundedUsd: number;
   opexOverrideUsd: number;
   opexPctOfCapexPerYear: number;
   annualRevenueUsd: number;
-  costIndex: number; // resolved: country.baseCostIndex * (1 + region.offsetPct/100)
 }
 
 export function rowUnitRate(item: ProjectItemLite): number {
@@ -169,9 +181,8 @@ export interface CostBreakdown {
   softCosts: number;
   escalation: number;
   fastTrackPremium: number;
-  land: number;
   contingency: number;
-  grandTotal: number;
+  grandTotal: number; // this facility's own subtotal — no land, see computeProgramCapex
   bandLow: number;
   bandHigh: number;
 }
@@ -238,13 +249,24 @@ export function computeCost(items: ProjectItemLite[], settings: ProjectSettings,
   const fastTrackPremium = settings.deliveryStrategy === "parallel" ? totalConstruction * (settings.fastTrackPremiumPct / 100) : 0;
 
   const contingencyPct = (settings.contingencyPctOverride ?? aace.contingencyPct) / 100;
-  const contingency = (totalConstruction + softCosts + escalation + fastTrackPremium) * contingencyPct + settings.landCostUsd * contingencyPct * 0.5;
+  const contingency = (totalConstruction + softCosts + escalation + fastTrackPremium) * contingencyPct;
 
-  const grandTotal = totalConstruction + softCosts + escalation + fastTrackPremium + settings.landCostUsd + contingency;
+  const grandTotal = totalConstruction + softCosts + escalation + fastTrackPremium + contingency;
   const bandLow = grandTotal * (1 + aace.bandLowPct / 100);
   const bandHigh = grandTotal * (1 + aace.bandHighPct / 100);
 
-  return { coreConstruction, addonConstruction, totalConstruction, softCosts, escalation, fastTrackPremium, land: settings.landCostUsd, contingency, grandTotal, bandLow, bandHigh };
+  return { coreConstruction, addonConstruction, totalConstruction, softCosts, escalation, fastTrackPremium, contingency, grandTotal, bandLow, bandHigh };
+}
+
+/** A Program's total capital cost: every facility's own subtotal (each
+ * already inclusive of its own soft costs/escalation/contingency), plus the
+ * site's land cost — a known, fixed figure, not run through any facility's
+ * construction contingency. This is the ONE place a Program's capex is
+ * summed, mirroring how compositeAssemblyRate() is the one place a
+ * composite assembly's rate is summed — API routes and any future UI should
+ * call this rather than re-deriving the sum. */
+export function computeProgramCapex(facilities: { grandTotal: number }[], landCostUsd: number): number {
+  return facilities.reduce((sum, f) => sum + f.grandTotal, 0) + landCostUsd;
 }
 
 export interface FeasibilityResult {
@@ -256,13 +278,13 @@ export interface FeasibilityResult {
   verdict: "not_feasible" | "conditional_funding" | "conditional_ops" | "feasible";
 }
 
-export function computeFeasibility(grandTotal: number, settings: ProjectSettings): FeasibilityResult {
-  const opexAuto = grandTotal * (settings.opexPctOfCapexPerYear / 100);
-  const opex = settings.opexOverrideUsd > 0 ? settings.opexOverrideUsd : opexAuto;
-  const operatingBalance = settings.annualRevenueUsd - opex;
-  const sustainabilityRatio = opex > 0 ? (settings.annualRevenueUsd / opex) * 100 : settings.annualRevenueUsd > 0 ? 100 : 0;
-  const coverage = grandTotal > 0 ? Math.min(100, (settings.fundedUsd / grandTotal) * 100) : 0;
-  const gap = Math.max(0, grandTotal - settings.fundedUsd);
+export function computeFeasibility(grandTotal: number, funding: FundingSettings): FeasibilityResult {
+  const opexAuto = grandTotal * (funding.opexPctOfCapexPerYear / 100);
+  const opex = funding.opexOverrideUsd > 0 ? funding.opexOverrideUsd : opexAuto;
+  const operatingBalance = funding.annualRevenueUsd - opex;
+  const sustainabilityRatio = opex > 0 ? (funding.annualRevenueUsd / opex) * 100 : funding.annualRevenueUsd > 0 ? 100 : 0;
+  const coverage = grandTotal > 0 ? Math.min(100, (funding.fundedUsd / grandTotal) * 100) : 0;
+  const gap = Math.max(0, grandTotal - funding.fundedUsd);
 
   let verdict: FeasibilityResult["verdict"] = "feasible";
   if (coverage < 50) verdict = "not_feasible";

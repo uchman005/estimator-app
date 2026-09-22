@@ -102,20 +102,66 @@ Both are intentionally small "samples" trees, not 1000 rows — the point is
 to seed something real and manageable that demonstrates the shape, not to
 pre-populate every possible line item.
 
-Manage all of this under the **Rate Book** section of the sidebar, which is
-split into three pages, one per concern: **Main Items** (`/catalog` — the
-assemblies, grouped by UniFormat letter; composite ones show their
+**Every program has its own catalog** — assemblies, sub-items and micro-items
+each carry a `programId` and belong to exactly one program (see "Programs &
+facilities" below for why). Manage it under the **Rate Book** section of the
+sidebar, split into three pages, one per concern: **Main Items** (`/catalog`),
+**Sub-Items** (`/catalog/sub-items`), and **Micro-Items** (`/catalog/micro-items`).
+Each page lists every program you have access to as its own collapsible
+section (same pattern as `/facilities`) — open one to manage *that program's*
+items. Within a program's section, composite assemblies still show their
 macro-items, each an *assembler* with a picker to add existing library
-sub-items rather than an inline creator), **Sub-Items** (`/catalog/sub-items`
-— the standalone library, each sub-item assembled from micro-items), and
-**Micro-Items** (`/catalog/micro-items` — the priced leaves). Creating a
-brand-new sub-item or micro-item happens on its own page; using an existing
-one in a macro-item or sub-item happens via the picker next to it. All three
-pages share one layout (`app/catalog/layout.tsx` + `CatalogProvider`), so the
-sidebar persists and the rate book is loaded once between them.
+sub-items rather than an inline creator; creating a brand-new sub-item or
+micro-item happens via that program's own create form. All three pages share
+one layout (`app/catalog/layout.tsx` + `CatalogProvider`), which now loads
+every accessible program's catalog once, shared between them.
 Each level renders as a collapsed summary pill (name + running subtotal)
 that expands into its own dedicated workspace — deliberately roomy, not a
 cramped inline strip.
+
+Need a Main/Sub/Micro Item that already exists in another program's catalog
+(or in the shared starter catalog every new program is cloned from)? Each
+program's section has an **"Import from another program…"** control
+(`components/catalog/ImportPicker.tsx`) — pick a source program, pick an item,
+and it's deep-copied into the current program's catalog as an independent
+copy (see `lib/catalogClone.ts`). Importing the same item twice makes two
+copies; there's no dedupe or "already imported, update in place" mode.
+
+## Programs & facilities: the elevated aggregation level
+
+A **program** (`programs` table) is a site/campus/portfolio — a 200-bed hospital
+plus several 50–100 bed clinics, housing, a school of nursing, a mortuary, a
+cafeteria, all on one piece of ground. A **facility** (`projects` table — the name
+stuck from before this level existed) is one building inside it, with its own BOQ,
+hospital generator, AACE maturity class, soft costs and schedule assumptions.
+Every facility belongs to exactly one program (`projects.programId`, `NOT NULL`) —
+there's no such thing as a standalone facility outside a program.
+
+Location, funding and feasibility all live on the **program**, not the facility:
+
+- **Location** (`countryId`/`regionId`, and therefore the FX rate and cost index)
+  is set once for the whole site and shared by every facility in it.
+- **Funding & site costs** (`landCostUsd`, `escalationPct`, `fundedUsd`,
+  `opexOverrideUsd`, `opexPctOfCapexPerYear`, `annualRevenueUsd`) are program-level
+  inputs. Escalation still runs against each facility's *own* schedule length
+  (`computeCost()` in `lib/calc/engine.ts`), it's just one shared rate.
+- **The feasibility verdict** (`computeFeasibility()`) is computed once, at the
+  program level, against `computeProgramCapex()` — the sum of every facility's own
+  subtotal (`computeCost().grandTotal`, which no longer includes land) plus the
+  program's land cost. A facility's own page shows its subtotal and confidence
+  band; it doesn't compute or show a feasibility verdict of its own.
+- **Collaborators** (`program_collaborators`) are granted on the program. One
+  invite/role there governs every facility inside it — a facility has no
+  collaborators or owner of its own; `requireFacilityRole()` in
+  `lib/auth/permissions.ts` resolves a facility's `programId` and delegates to
+  `requireProgramRole()`.
+- Each facility also carries a **`phase`** (`phase_1`/`phase_2`/`phase_3` —
+  Infrastructure Commissioning / Improvement / Expansion), letting a program's
+  facilities list group by build-out phase.
+
+`GET /api/programs/:id` returns the program plus every facility's own computed
+`cost`/`schedule`, and the aggregate `capex`/`bandLow`/`bandHigh`/`feasibility`
+across all of them — see `app/api/programs/[id]/route.ts`.
 
 ## Getting started
 
@@ -132,14 +178,18 @@ verification in this scaffold) to reach the dashboard.
 - 5 starter countries (Nigeria, Ghana, Kenya, South Africa, custom/USD) with regions
 - The UniFormat II classification tree (A–G + Z, down to the leaf codes assemblies attach to)
 - AACE Class 1–5 contingency/accuracy bands
-- 25 assemblies: 17 tier-rate, 3 material-variant (exterior walls/windows/doors),
-  and 5 composite (Structural Work, Mechanical Systems, Electrical Systems,
-  Specialized Medical Areas, Finishing — each built from sub-items and
-  micro-items, see "Pricing model" above)
+- A hidden system user + program (`isTemplate: true`, "Default Starter Catalog")
+  owning 21 assemblies: 16 tier-rate (15 plus "Custom / Other"), 3 material-variant
+  (exterior walls/windows/doors), and 2 composite (Hospital Building — Core
+  Construction; Primary Health Care Clinic — Composite — each built from
+  sub-items and micro-items, see "Pricing model" above). Every program you
+  create afterward gets its own cloned copy of this catalog — see "Every
+  program has its own catalog" above.
 - The hospital building type + its department space-program template
 
-No user accounts or projects are seeded — the first thing you'll do is sign up.
-Delete `sqlite.db*` and re-run `npm run db:setup` to start over.
+No *real* user accounts or programs are seeded — the first thing you'll do is
+sign up and create a program, which clones its own catalog from the template
+above. Delete `sqlite.db*` and re-run `npm run db:setup` to start over.
 
 > **If `npm install` fails on `better-sqlite3`** with a `node-gyp`/compile error:
 > this has shown up as a transient registry hiccup during a large install batch
@@ -150,23 +200,31 @@ Delete `sqlite.db*` and re-run `npm run db:setup` to start over.
 
 ## Accounts, ownership & sharing
 
-- Every project has exactly one **owner** (`projects.ownerId`) — whoever created it.
-  A user can own any number of projects (`db/schema.ts` puts no limit on it).
-- The owner can share a project with anyone **by email**, choosing **viewer** or
-  **editor**. If that email doesn't have an account yet, the invite sits as
-  `status: 'pending'` in `project_collaborators` and links itself automatically
-  — no re-invite needed — the moment that email signs up (`app/api/auth/signup`
-  checks for matching pending invites and accepts them as part of account creation).
-- **Editors** can change everything about a project (settings, BOQ, hospital
-  generator) except delete it or manage who else has access. **Viewers** can see
-  the full computed estimate but every input is disabled — enforced both in the
-  UI (the entire input column renders inside a native `<fieldset disabled>`, which
-  cascades to every control inside it regardless of which component renders it)
-  and, more importantly, server-side on every mutating route.
-- Authorization is centralized in `lib/auth/permissions.ts`
-  (`requireProjectRole(userId, projectId, minRole)`), which every project-scoped
-  API route calls before doing anything. A user with no access at all gets a 404
-  rather than a 403, so a project's existence isn't leaked to people who aren't on it.
+- Every program has exactly one **owner** (`programs.ownerId`) — whoever created
+  it. A user can own any number of programs (`db/schema.ts` puts no limit on it).
+  Facilities have no owner of their own — access is entirely inherited from their
+  parent program.
+- The owner can share a program with anyone **by email**, choosing **viewer** or
+  **editor** — one grant that covers every facility inside the program. If that
+  email doesn't have an account yet, the invite sits as `status: 'pending'` in
+  `program_collaborators` and links itself automatically — no re-invite needed —
+  the moment that email signs up (`app/api/auth/signup` checks for matching
+  pending invites and accepts them as part of account creation).
+- **Editors** can change everything about a program or any of its facilities
+  (settings, BOQ, hospital generator) except delete the program or manage who
+  else has access. **Viewers** can see the full computed estimate but every input
+  is disabled — enforced both in the UI (the entire input column renders inside a
+  native `<fieldset disabled>`, which cascades to every control inside it
+  regardless of which component renders it) and, more importantly, server-side on
+  every mutating route.
+- Authorization is centralized in `lib/auth/permissions.ts`:
+  `requireProgramRole(userId, programId, minRole)` is the gate every
+  program-scoped API route calls; `requireFacilityRole(userId, projectId, minRole)`
+  resolves a facility's `programId` and delegates to it, so a facility-scoped
+  route (BOQ items, the hospital generator, a facility's own settings) is governed
+  by the same program-level grant. A user with no access at all gets a 404 rather
+  than a 403, so a program's (or facility's) existence isn't leaked to people who
+  aren't on it.
 - Sessions are DB-backed (`sessions` table, random 32-byte token in an httpOnly
   cookie, 30-day expiry) rather than stateless JWTs, so a session can be revoked
   by deleting its row — simpler to reason about than token invalidation, and fine
@@ -177,37 +235,53 @@ Delete `sqlite.db*` and re-run `npm run db:setup` to start over.
 
 ```
 db/
-  schema.ts          Drizzle schema — 24 tables, see below
+  schema.ts          Drizzle schema — see below
   seed.ts             Reference-data seed (idempotent-ish; re-run against a fresh DB)
   migrate.ts          Migration runner (npm run db:migrate)
 lib/
   auth/
     password.ts       scrypt hashing (Node built-in, no dependency)
     session.ts         DB-backed sessions, cookie read/write
-    permissions.ts      getProjectRole / requireProjectRole — the single gate every
-                        project route calls before reading or mutating anything
-  calc/engine.ts      Pure calculation functions — no DB, no fetch. Cost, schedule,
-                      feasibility, the hospital-program generator, AND the composite
+    permissions.ts      requireProgramRole (the single gate every program route calls)
+                        + requireFacilityRole (resolves a facility's programId and
+                        delegates to it — see "Programs & facilities" above)
+  calc/engine.ts      Pure calculation functions — no DB, no fetch. Per-facility cost/
+                      schedule, the hospital-program generator, the program-level
+                      computeProgramCapex()/computeFeasibility(), AND the composite
                       macro-item/sub-item/micro-item rate sum (subItemRate(),
                       compositeAssemblyRate()) all live here, shared verbatim by API
                       routes (server), the editor (client), and the catalog page, so
                       there is exactly one implementation of the math to trust.
-  data.ts             Drizzle query helpers — getComponentLibrary() builds the full
-                      reusable sub-item/micro-item library as in-memory maps first,
-                      then getAllAssembliesLite() nests macro_items → (join) →
-                      library sub-items → (join) → library micro-items into each
-                      composite assembly from those same maps, so a sub-item
-                      assembled into three different macro-items is the same object
-                      in memory, not three copies
+  data.ts             Drizzle query helpers — getComponentLibrary(programId) builds
+                      that program's reusable sub-item/micro-item library as
+                      in-memory maps first, then getAllAssembliesLite(programId)
+                      nests macro_items → (join) → library sub-items → (join) →
+                      library micro-items into each composite assembly from those
+                      same maps, so a sub-item assembled into three different
+                      macro-items is the same object in memory, not three copies.
+                      getTemplateProgramId() resolves the shared starter-catalog
+                      program. getProgramFull()/getProjectFull() assemble a
+                      program's or one facility's raw rows (location resolved via
+                      resolveLocation()); the calling route does the math.
+  catalogClone.ts     cloneAssembly()/cloneSubItem()/cloneMicroItem()/
+                      cloneAllAssemblies() — the ONE place a catalog item is ever
+                      deep-copied from one program's catalog into another's, used
+                      both to bootstrap a new program's starter catalog and to
+                      power "import from another program." Always copies fresh,
+                      never dedupes.
   fx.ts               LIVE_FX_SOURCE / SEED_FX_SOURCE constants
 app/
   login/, signup/     Auth pages (AuthForm client component, shared by both)
-  page.tsx            Dashboard — auth-gated; lists owned + shared-with-you projects
+  page.tsx            Dashboard — auth-gated; lists owned + shared-with-you programs
   catalog/
-    page.tsx           Server auth guard
-    CatalogClient.tsx   Fetches both the assemblies and the standalone library,
-                        renders the Assemblies list, Sub-Items Library, and
-                        Micro-Items Library sections
+    layout.tsx + CatalogProvider.tsx   Server auth guard + client provider that
+                        loads every accessible program's catalog once, shared
+                        between the three pages below
+    MainItemsView.tsx, sub-items/SubItemsView.tsx, micro-items/MicroItemsView.tsx
+                        Each renders one collapsible section per program (same
+                        pattern as /facilities); inside a program's section, the
+                        existing per-item components render unchanged, just
+                        scoped to that program's slice of data
     components/         AssemblyCard (branches per pricingMode) → MacroItemBlock
                         (assembles library sub-items in, via a picker, plus its own
                         labour) → AssembledSubItemRow; SubItemsLibraryPanel (create/
@@ -219,27 +293,45 @@ app/
   api/
     auth/              signup, login, logout, me
     catalog/            library CRUD + assemble/detach joins + tier-rate/variant
-                        CRUD — see table below
-    projects/           see table below, all permission-checked
+                        CRUD, all program-permission-checked — see table below
+    programs/            see table below, all permission-checked (incl.
+                        :id/catalog/import and :id/catalog/sources)
+    projects/            facility-scoped routes (BOQ, hospital generator) — see table
+  facilities/
+    page.tsx + FacilitiesClient.tsx   Every facility across every program you have
+                        access to, grouped by program (same collapsible-per-program
+                        pattern as the catalog pages) — open a facility, change its
+                        phase, delete it, or add a new one, without visiting the
+                        program page first
+  programs/[id]/
+    page.tsx           Server wrapper — redirects to /login if not authenticated
+    ProgramEditor.tsx   Thin client orchestrator, mirrors ProjectEditor.tsx
+    useProgramEditor.ts Data-fetching + local state + persistence, as a hook
+    components/         CountryRegionPanel, FacilitiesPanel (add a facility, grouped
+                        by phase), FundingPanel, CollaboratorsPanel,
+                        ProgramSummaryPanel, FeasibilityPanel + types.ts
   projects/[id]/
     page.tsx           Server wrapper — redirects to /login if not authenticated
     ProjectEditor.tsx   Thin client orchestrator — no business logic, just wiring;
                         wraps every input in <fieldset disabled={!canEdit}>
     useProjectEditor.ts Data-fetching + local state + persistence, as a hook
-    components/         One file per panel (CountryRegionPanel, AaceClassPanel,
-                        HospitalGeneratorPanel, BoqPanel + BoqRow [shows a composite
-                        assembly's breakdown inline via an expand toggle],
-                        SoftCostsPanel, ScheduleAssumptionsPanel, FundingPanel,
-                        CollaboratorsPanel, SummaryPanel, SchedulePanel,
-                        FeasibilityPanel) + types.ts
+    components/         One file per panel (AaceClassPanel, HospitalGeneratorPanel,
+                        BoqPanel + BoqRow [shows a composite assembly's breakdown
+                        inline via an expand toggle], SoftCostsPanel,
+                        ScheduleAssumptionsPanel, SummaryPanel, SchedulePanel)
+                        + types.ts — location, funding and collaborators live on
+                        the program instead (see app/programs/[id]/components/)
 components/
-  AppShell.tsx        The persistent sidebar (Dashboard, Rate Book › Main / Sub / Micro Items, user email,
-                      sign-out, theme toggle) — wraps every authenticated page
+  AppShell.tsx        The persistent sidebar (Programs, Facilities, Rate Book › Main /
+                      Sub / Micro Items, user email, sign-out, theme toggle) — wraps
+                      every authenticated page
   ThemeToggle.tsx     Light/dark switch; persists to localStorage, applies via
                       data-theme on <html> (see the anti-flash script in
                       app/layout.tsx that reads it before first paint)
   AuthForm.tsx        Shared login/signup form UI
   FxStatusPanel.tsx   Dashboard-level global FX status + refresh
+  catalog/ImportPicker.tsx   Pick a source program + an item of one kind, import
+                      it into the currently-open program's catalog
   ui/                 Generic, reusable primitives (Panel, Field/Input/Select/NumField,
                         Button/ClassBadge, Kpi/BreakdownRow/ScheduleBar) used by every
                         page — the design system, not project-specific
@@ -270,38 +362,42 @@ instead of repeating hex codes.
 | `/api/auth/signup` | POST | create account (auto-accepts any pending invites to that email) | public |
 | `/api/auth/login` / `logout` | POST | session cookie issue/revoke | public |
 | `/api/auth/me` | GET | current user, for client-side header | any |
-| `/api/projects` | GET, POST | list (owned+shared, separated) / create | signed in |
-| `/api/projects/:id` | GET, PATCH, DELETE | full computed estimate / update settings / delete | viewer+ / editor+ / owner |
+| `/api/programs` | GET, POST | list (owned+shared, separated) / create | signed in |
+| `/api/programs/:id` | GET, PATCH, DELETE | every facility's computed cost/schedule + aggregate capex/feasibility / update location+funding / delete (cascades to facilities) | viewer+ / editor+ / owner |
+| `/api/programs/:id/facilities` | POST | add a facility (a `projects` row) to this program | editor+ |
+| `/api/programs/:id/collaborators` | GET, POST | list access / invite by email+role — governs every facility in the program | viewer+ / owner |
+| `/api/programs/:id/collaborators/:collabId` | PATCH, DELETE | change role / revoke access | owner |
+| `/api/projects/:id` | GET, PATCH, DELETE | one facility's own computed BOQ/cost/schedule / update its settings / delete | viewer+ / editor+ / owner (of the parent program) |
 | `/api/projects/:id/items` | POST | add a BOQ line item | editor+ |
 | `/api/projects/:id/items/:itemId` | PATCH, DELETE | edit / remove a line item | editor+ |
 | `/api/projects/:id/generate-hospital` | POST | run the bed-program generator | editor+ |
-| `/api/projects/:id/collaborators` | GET, POST | list access / invite by email+role | viewer+ / owner |
-| `/api/projects/:id/collaborators/:collabId` | PATCH, DELETE | change role / revoke access | owner |
-| `/api/reference` | GET | countries+regions+FX, currencies, AACE classes, assemblies | any |
+| `/api/reference?programId=` | GET | countries+regions+FX, currencies, AACE classes, and THAT program's assemblies | viewer+ (on `programId`) |
 | `/api/reference/countries` | POST | add a country (+ a default "National average" region) | any |
 | `/api/reference/countries/:id` | PATCH, DELETE | edit / remove a country | any |
 | `/api/reference/regions` | POST | add a region | any |
 | `/api/reference/regions/:id` | PATCH, DELETE | edit / remove a region | any |
 | `/api/fx/refresh` | POST | pull live rates from `open.er-api.com` (free, no key, ~161 currencies); throttled to once/24h unless `?force=true`; on failure, existing rates are left untouched and the error is returned as JSON, never a crash | any |
-| `/api/catalog/assemblies/:id/tier-rates` | PATCH | upsert an assembly's basic/standard/premium rates | any |
-| `/api/catalog/assemblies/:id/variants` | POST | add a material option to a variant-priced assembly | any |
-| `/api/catalog/variants/:id` | PATCH, DELETE | edit/remove a material option | any |
-| `/api/catalog/library` | GET | the full reusable sub-item/micro-item library, independent of any assembly | any |
-| `/api/catalog/assemblies/:id/macro-items` | POST | add a macro-item to a composite assembly (the "Main Item") | any |
-| `/api/catalog/macro-items/:id` | PATCH, DELETE | rename/remove a macro-item, or set its `labour` (cascades to its assembled-in join rows) | any |
-| `/api/catalog/macro-items/:id/components` | POST | **assemble** an existing library sub-item into this macro-item, at a quantity | any |
-| `/api/catalog/macro-item-components/:id` | PATCH, DELETE | change quantity / remove one sub-item from one macro-item — the library sub-item itself is untouched | any |
-| `/api/catalog/sub-items` | POST | create a new standalone sub-item in the library (not yet assembled anywhere) | any |
-| `/api/catalog/sub-items/:id` | PATCH, DELETE | rename the library sub-item, set its `labour`, or delete it outright (cascades everywhere it's assembled) | any |
-| `/api/catalog/sub-items/:id/components` | POST | **assemble** an existing library micro-item into this sub-item, at a quantity | any |
-| `/api/catalog/sub-item-components/:id` | PATCH, DELETE | change quantity / remove one micro-item from one sub-item — the library micro-item itself is untouched | any |
-| `/api/catalog/micro-items` | POST | create a new standalone micro-item in the library, with its 3 tier rates | any |
-| `/api/catalog/micro-items/:id` | PATCH, DELETE | edit name/unit/rates, or delete outright — this is the route that actually moves every composite price that assembles it in | any |
+| `/api/programs/:id/catalog/sources` | GET | programs you can import catalog items *from* (your own owned+shared programs, plus the shared template) | editor+ (on `:id`) |
+| `/api/programs/:id/catalog/import` | GET, POST | browse a source program's items of one kind / deep-copy one item into `:id`'s catalog | editor+ (on `:id`), viewer+ or template (on the source) |
+| `/api/catalog/assemblies/:id/tier-rates` | PATCH | upsert an assembly's basic/standard/premium rates | editor+ (on the assembly's program) |
+| `/api/catalog/assemblies/:id/variants` | POST | add a material option to a variant-priced assembly | editor+ |
+| `/api/catalog/variants/:id` | PATCH, DELETE | edit/remove a material option | editor+ |
+| `/api/catalog/library?programId=` | GET | THAT program's reusable sub-item/micro-item library, independent of any assembly | viewer+ |
+| `/api/catalog/assemblies/:id/macro-items` | POST | add a macro-item to a composite assembly (the "Main Item") | editor+ |
+| `/api/catalog/macro-items/:id` | PATCH, DELETE | rename/remove a macro-item, or set its `labour` (cascades to its assembled-in join rows) | editor+ |
+| `/api/catalog/macro-items/:id/components` | POST | **assemble** an existing library sub-item into this macro-item, at a quantity — sub-item must belong to the same program | editor+ |
+| `/api/catalog/macro-item-components/:id` | PATCH, DELETE | change quantity / remove one sub-item from one macro-item — the library sub-item itself is untouched | editor+ |
+| `/api/catalog/sub-items` | POST | create a new sub-item in a program's library (body needs `programId`) | editor+ |
+| `/api/catalog/sub-items/:id` | PATCH, DELETE | rename the library sub-item, set its `labour`, or delete it outright (cascades everywhere it's assembled) | editor+ |
+| `/api/catalog/sub-items/:id/components` | POST | **assemble** an existing library micro-item into this sub-item, at a quantity — micro-item must belong to the same program | editor+ |
+| `/api/catalog/sub-item-components/:id` | PATCH, DELETE | change quantity / remove one micro-item from one sub-item — the library micro-item itself is untouched | editor+ |
+| `/api/catalog/micro-items` | POST | create a new micro-item in a program's library, with its 3 tier rates (body needs `programId`) | editor+ |
+| `/api/catalog/micro-items/:id` | PATCH, DELETE | edit name/unit/rates, or delete outright — this is the route that actually moves every composite price that assembles it in | editor+ |
 
-Reference-data routes (countries/regions/assemblies) aren't user-scoped in this
-scaffold — they're shared global catalog data, same as a real quantity-surveyor's
-rate book would be. Locking those down to specific roles (e.g. only certain users
-can edit the rate book) is a reasonable next step but wasn't asked for yet.
+Country/region reference data is still global/shared and unauthenticated —
+see "What's intentionally not built yet." The catalog itself (assemblies/
+sub-items/micro-items) is no longer global — see "Every program has its own
+catalog" above.
 
 ## Design notes worth knowing before extending this
 
@@ -328,6 +424,31 @@ can edit the rate book) is a reasonable next step but wasn't asked for yet.
   assembled it in, and deleting a sub-item removes it from every macro-item that
   assembled it in. There's no "used in N places, are you sure?" confirmation in the
   UI yet — worth adding before this is used by more than one person on real data.
+- **A migration that tightens a column to `NOT NULL` across more than one table
+  needs care on SQLite, or it silently deletes unrelated data.** SQLite has no
+  `ALTER COLUMN`, so drizzle-kit generates a rebuild (`CREATE __new_x`,
+  `INSERT...SELECT`, `DROP TABLE x`, `RENAME`) wrapped in
+  `PRAGMA foreign_keys=OFF` / `=ON`. Two things compound badly: (1) that
+  `PRAGMA` is a documented no-op while a transaction is open, and drizzle's own
+  `migrate()` wraps every pending migration file in one `BEGIN...COMMIT`; (2)
+  when a single migration rebuilds *several* tables, drizzle-kit's generated
+  SQL only brackets the *first* rebuild in `OFF`/`ON` and re-enables
+  `foreign_keys=ON` before the remaining `DROP TABLE`s. With enforcement
+  genuinely on, SQLite's documented behavior for `DROP TABLE` on a table with
+  `ON DELETE CASCADE` children is to run an *implicit* `DELETE FROM` first —
+  which cascades, recursively, through every child (and grandchild) row,
+  wiping tables the migration file never even mentions. This happened for
+  real tightening `assemblies`/`sub_items`/`micro_items`.programId to
+  `NOT NULL` in one migration — it silently deleted every `macro_items`,
+  `assembly_tier_rates`, `assembly_variants`, `macro_item_sub_items`,
+  `sub_item_micro_items` and `micro_item_rates` row. If you generate a
+  migration like this, apply it with a small script that opens a **fresh**
+  connection (so `PRAGMA foreign_keys=OFF` genuinely takes effect before any
+  transaction starts), strips every embedded `PRAGMA foreign_keys=...`
+  statement from the file and controls it yourself for the whole file, then
+  hand-inserts the matching `__drizzle_migrations` row (same sha256-of-file
+  hash and journal `when` timestamp `npm run db:migrate` would have used) so
+  later runs don't try to reapply it. Test against a backup first.
 - **Labour lives on `macro_items`/`sub_items`, not on the join or the micro-item.**
   That was a deliberate choice: labour is "the cost of combining what's assembled
   into *this* thing," which is a property of the container, not of any one
@@ -358,13 +479,15 @@ can edit the rate book) is a reasonable next step but wasn't asked for yet.
 
 ## What's intentionally not built yet
 
-- **Catalog routes have no permission check at all** — same permissive pattern
-  as the original `/api/reference/countries` routes (any signed-in user, in
-  fact currently any *request* — these routes don't call
-  `getCurrentUserFromRequest` — can edit the shared rate book). Fine for a
-  single-org internal tool, not fine before this faces the public internet;
-  the fix is straightforward (add an auth check, maybe a role) but hasn't
-  been prioritized since nothing asked for it yet.
+- **`/api/reference/countries` and `/api/reference/regions` still have no
+  permission check** — any signed-in user (in fact currently any *request* —
+  these routes don't call `getCurrentUserFromRequest`) can edit the shared
+  country/region reference data. Catalog routes (assemblies/sub-items/
+  micro-items) no longer have this gap — they're program-scoped and
+  permission-checked via `requireAssemblyRole`/`requireSubItemRole`/
+  `requireMicroItemRole` in `lib/auth/permissions.ts` — but country/region
+  data is intentionally still global/shared, same open item as before, just
+  narrower now.
 - **`space_template_items` still isn't wired into the hospital generator** —
   the department percentage split lives twice, once in the DB (informational
   only now) and once hardcoded in `lib/calc/engine.ts`'s `HOSPITAL_DEPT_SPLIT`.

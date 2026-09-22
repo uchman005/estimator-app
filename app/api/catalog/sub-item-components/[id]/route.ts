@@ -2,17 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { subItemMicroItems } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { getCurrentUserFromRequest } from "@/lib/auth/session";
+import { requireSubItemRole } from "@/lib/auth/permissions";
+
+async function requireRoleForJoin(userId: number | null, joinId: number, minRole: "editor") {
+  const [row] = await db.select({ subItemId: subItemMicroItems.subItemId }).from(subItemMicroItems).where(eq(subItemMicroItems.id, joinId));
+  if (!row) return { ok: false as const, status: 404 as const, error: "Not found." };
+  return requireSubItemRole(userId, row.subItemId, minRole);
+}
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const joinId = Number(id);
+  const user = await getCurrentUserFromRequest(req);
+  const access = await requireRoleForJoin(user?.id ?? null, joinId, "editor");
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+
   const body = await req.json();
   if (!("quantity" in body)) return NextResponse.json({ error: "quantity is required." }, { status: 400 });
-  await db.update(subItemMicroItems).set({ quantity: Number(body.quantity) || 0 }).where(eq(subItemMicroItems.id, Number(id)));
+  await db.update(subItemMicroItems).set({ quantity: Number(body.quantity) || 0 }).where(eq(subItemMicroItems.id, joinId));
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await db.delete(subItemMicroItems).where(eq(subItemMicroItems.id, Number(id)));
+  const joinId = Number(id);
+  const user = await getCurrentUserFromRequest(req);
+  const access = await requireRoleForJoin(user?.id ?? null, joinId, "editor");
+  if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+
+  await db.delete(subItemMicroItems).where(eq(subItemMicroItems.id, joinId));
   return NextResponse.json({ ok: true });
 }

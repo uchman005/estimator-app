@@ -25,19 +25,19 @@ export interface ReferenceData {
   assemblies: AssemblyLite[];
 }
 
+// A facility — one building inside a Program. Location, funding and
+// feasibility live on the parent Program (see app/programs/[id]/components/types.ts).
 export interface ProjectRow {
   id: number;
+  programId: number;
+  phase: "phase_1" | "phase_2" | "phase_3";
   name: string;
   author: string | null;
-  countryId: string;
-  regionId: number | null;
   aaceClass: number;
   deliveryStrategy: "phased" | "parallel";
   designFeePct: number;
   pmFeePct: number;
   permitFeePct: number;
-  landCostUsd: number;
-  escalationPct: number;
   contingencyPctOverride: number | null;
   fastTrackPremiumPct: number;
   landMonths: number;
@@ -45,10 +45,6 @@ export interface ProjectRow {
   designPermitOverlapPct: number;
   commissionMonths: number;
   startDate: string | null;
-  fundedUsd: number;
-  opexOverrideUsd: number;
-  opexPctOfCapexPerYear: number;
-  annualRevenueUsd: number;
 }
 
 export interface ItemRow {
@@ -76,12 +72,4 @@ export interface HospitalGenInfo {
   elevators: number;
   stairs: number;
   deptSplitM2: { label: string; areaM2: number }[];
-}
-
-export interface CollaboratorRow {
-  id: number;
-  invitedEmail: string;
-  role: "viewer" | "editor";
-  status: "pending" | "accepted";
-  userName: string | null;
 }

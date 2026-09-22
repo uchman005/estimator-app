@@ -8,6 +8,34 @@
       "when": 1789941726316,
       "tag": "0000_friendly_dormammu",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790075384128,
+      "tag": "0001_add_programs",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790075460540,
+      "tag": "0002_tighten_programs",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790091547570,
+      "tag": "0003_catalog_program_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790091772336,
+      "tag": "0004_tighten_catalog_program_scope",
+      "breakpoints": true
     }
   ]
 }

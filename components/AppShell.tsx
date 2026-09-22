@@ -7,7 +7,10 @@ import { ThemeToggle } from "./ThemeToggle";
 
 type NavItem = { href: string; label: string; icon: () => React.JSX.Element; exact?: boolean };
 
-const NAV: NavItem[] = [{ href: "/", label: "Dashboard", icon: DashboardIcon, exact: true }];
+const NAV: NavItem[] = [
+  { href: "/", label: "Programs", icon: DashboardIcon, exact: true },
+  { href: "/facilities", label: "Facilities", icon: FacilitiesIcon, exact: true },
+];
 
 // The rate book is three separate concerns, one page each. /catalog is a prefix of the other two,
 // so every entry here matches its own path exactly.
@@ -135,6 +138,15 @@ function DashboardIcon() {
       <rect x="14" y="3" width="7" height="5" rx="1" />
       <rect x="14" y="12" width="7" height="9" rx="1" />
       <rect x="3" y="16" width="7" height="5" rx="1" />
+    </svg>
+  );
+}
+function FacilitiesIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+      <path d="M3 21h18" />
+      <path d="M5 21V7l7-4 7 4v14" />
+      <path d="M9 9h1M14 9h1M9 13h1M14 13h1M10 21v-4h4v4" />
     </svg>
   );
 }
