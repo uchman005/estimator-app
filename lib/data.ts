@@ -19,8 +19,9 @@ import {
   programs,
   projects,
   projectItems,
+  projectOpexItems,
 } from "@/db/schema";
-import type { AssemblyLite, ProjectItemLite, Tier, MacroItemLite, SubItemLite, MicroItemLite } from "@/lib/calc/engine";
+import type { AssemblyLite, ProjectItemLite, OpexItemLite, Tier, MacroItemLite, SubItemLite, MicroItemLite } from "@/lib/calc/engine";
 
 /** The full reusable library for ONE program — every sub-item and micro-item
  * that program's catalog owns, fully assembled with their own
@@ -222,6 +223,10 @@ async function resolveLocation(countryId: string, regionId: number | null) {
   };
 }
 
+function toOpexItemsLite(items: (typeof projectOpexItems.$inferSelect)[]): OpexItemLite[] {
+  return items.map((it) => ({ annualAmountUsd: it.annualAmountUsd, isIncluded: it.isIncluded }));
+}
+
 function toItemsLite(items: (typeof projectItems.$inferSelect)[], assemblyById: Map<number, AssemblyLite>): (ProjectItemLite & { id: number })[] {
   return items.map((it) => ({
     id: it.id,
@@ -250,6 +255,7 @@ export async function getProjectFull(projectId: number) {
   const assemblyList = await getAllAssembliesLite(project.programId);
   const assemblyById = new Map(assemblyList.map((a) => [a.id, a]));
   const itemsLite = toItemsLite(items, assemblyById);
+  const opexItems = await db.select().from(projectOpexItems).where(eq(projectOpexItems.projectId, projectId));
 
   const location = await resolveLocation(program.countryId, program.regionId);
   const [aaceRow] = await db.select().from(aaceClasses).where(eq(aaceClasses.classNumber, project.aaceClass));
@@ -258,6 +264,7 @@ export async function getProjectFull(projectId: number) {
     project,
     program,
     items: itemsLite,
+    opexItems,
     ...location,
     aace: aaceRow,
   };
@@ -277,6 +284,9 @@ export async function getProgramFull(programId: number) {
   const allItems = facilityIds.length
     ? await db.select().from(projectItems).where(inArray(projectItems.projectId, facilityIds))
     : [];
+  const allOpexItems = facilityIds.length
+    ? await db.select().from(projectOpexItems).where(inArray(projectOpexItems.projectId, facilityIds))
+    : [];
   const assemblyList = await getAllAssembliesLite(programId);
   const assemblyById = new Map(assemblyList.map((a) => [a.id, a]));
   const aaceRows = await db.select().from(aaceClasses);
@@ -288,6 +298,7 @@ export async function getProgramFull(programId: number) {
       allItems.filter((it) => it.projectId === project.id),
       assemblyById
     ),
+    opexItems: toOpexItemsLite(allOpexItems.filter((it) => it.projectId === project.id)),
     aace: aaceByNumber.get(project.aaceClass),
   }));
 

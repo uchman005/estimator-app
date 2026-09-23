@@ -106,11 +106,20 @@ export interface ProjectSettings {
 // The subset of Program fields computeFeasibility needs — kept separate from
 // ProjectSettings so the same function works whether the caller is passing a
 // facility's own settings (it never does anymore) or a Program's.
+// opexPctOfCapexPerYear is NOT here — it's the per-facility auto-estimate
+// fallback rate used by computeFacilityOpex()/computeProgramOpex(), not a
+// program-total override, so it's passed to those directly instead.
 export interface FundingSettings {
   fundedUsd: number;
   opexOverrideUsd: number;
-  opexPctOfCapexPerYear: number;
   annualRevenueUsd: number;
+}
+
+/** A recurring/operating cost line item — salaries, maintenance, utilities —
+ * on one facility. See project_opex_items in db/schema.ts. */
+export interface OpexItemLite {
+  annualAmountUsd: number;
+  isIncluded: boolean;
 }
 
 export function rowUnitRate(item: ProjectItemLite): number {
@@ -258,15 +267,36 @@ export function computeCost(items: ProjectItemLite[], settings: ProjectSettings,
   return { coreConstruction, addonConstruction, totalConstruction, softCosts, escalation, fastTrackPremium, contingency, grandTotal, bandLow, bandHigh };
 }
 
-/** A Program's total capital cost: every facility's own subtotal (each
- * already inclusive of its own soft costs/escalation/contingency), plus the
- * site's land cost — a known, fixed figure, not run through any facility's
- * construction contingency. This is the ONE place a Program's capex is
- * summed, mirroring how compositeAssemblyRate() is the one place a
- * composite assembly's rate is summed — API routes and any future UI should
- * call this rather than re-deriving the sum. */
+/** A Program's total capital cost: every INCLUDED facility's own subtotal
+ * (each already inclusive of its own soft costs/escalation/contingency),
+ * plus the site's land cost — a known, fixed figure, not run through any
+ * facility's construction contingency. Facilities toggled off
+ * (isIncluded: false) contribute nothing — filter them out before calling
+ * this, same as the caller filters `facilities` for computeProgramOpex()
+ * below. This is the ONE place a Program's capex is summed, mirroring how
+ * compositeAssemblyRate() is the one place a composite assembly's rate is
+ * summed — API routes and any future UI should call this rather than
+ * re-deriving the sum. */
 export function computeProgramCapex(facilities: { grandTotal: number }[], landCostUsd: number): number {
   return facilities.reduce((sum, f) => sum + f.grandTotal, 0) + landCostUsd;
+}
+
+/** One facility's own annual recurring/operating cost: the sum of its own
+ * included opex line items (salaries, maintenance, ...) if it has any,
+ * otherwise an auto-estimate — fallbackPctOfCapex% of THIS facility's own
+ * capex subtotal, not the whole program's. A facility only needs itemizing
+ * once you want a real number instead of that estimate. */
+export function computeFacilityOpex(items: OpexItemLite[], fallbackPctOfCapex: number, facilityCapex: number): number {
+  if (items.length === 0) return facilityCapex * (fallbackPctOfCapex / 100);
+  return items.reduce((sum, it) => (it.isIncluded ? sum + it.annualAmountUsd : sum), 0);
+}
+
+/** A Program's total annual recurring/operating cost: computeFacilityOpex()
+ * summed across every INCLUDED facility — the per-facility counterpart to
+ * computeProgramCapex(). Filter `facilities` to isIncluded ones before
+ * calling, same as for computeProgramCapex(). */
+export function computeProgramOpex(facilities: { grandTotal: number; opexItems: OpexItemLite[] }[], fallbackPctOfCapex: number): number {
+  return facilities.reduce((sum, f) => sum + computeFacilityOpex(f.opexItems, fallbackPctOfCapex, f.grandTotal), 0);
 }
 
 export interface FeasibilityResult {
@@ -278,9 +308,13 @@ export interface FeasibilityResult {
   verdict: "not_feasible" | "conditional_funding" | "conditional_ops" | "feasible";
 }
 
-export function computeFeasibility(grandTotal: number, funding: FundingSettings): FeasibilityResult {
-  const opexAuto = grandTotal * (funding.opexPctOfCapexPerYear / 100);
-  const opex = funding.opexOverrideUsd > 0 ? funding.opexOverrideUsd : opexAuto;
+/** autoOpex is the program's total recurring cost as computed by
+ * computeProgramOpex() (itemized-per-facility, falling back to a %-of-capex
+ * estimate) — funding.opexOverrideUsd, when set, is a program-wide manual
+ * override that wins over that computed total outright, same "override wins"
+ * pattern as an assembly's rateOverrideUsd. */
+export function computeFeasibility(grandTotal: number, autoOpex: number, funding: FundingSettings): FeasibilityResult {
+  const opex = funding.opexOverrideUsd > 0 ? funding.opexOverrideUsd : autoOpex;
   const operatingBalance = funding.annualRevenueUsd - opex;
   const sustainabilityRatio = opex > 0 ? (funding.annualRevenueUsd / opex) * 100 : funding.annualRevenueUsd > 0 ? 100 : 0;
   const coverage = grandTotal > 0 ? Math.min(100, (funding.fundedUsd / grandTotal) * 100) : 0;

@@ -60,24 +60,34 @@ export function useProgramEditor(programId: number) {
     [country, region]
   );
 
+  // Only facilities still toggled on count toward the program's totals —
+  // toggling one off is a live "what if we drop this" recompute, not a
+  // server round trip.
+  const includedFacilities = useMemo(() => facilities.filter((f) => f.project.isIncluded), [facilities]);
+
   // Recomputed on every keystroke, same pattern as the facility editor
   // (lib/calc/engine.ts is pure and safe on the client). Note: a change to
   // escalationPct only takes effect in each facility's own subtotal after
   // the next full reload — that recompute needs each facility's raw items,
   // which this page doesn't hold — landCostUsd/funding fields update instantly.
   const capex = useMemo(
-    () => (program ? computeProgramCapex(facilities.map((f) => ({ grandTotal: f.cost.grandTotal })), program.landCostUsd) : 0),
-    [facilities, program]
+    () => (program ? computeProgramCapex(includedFacilities.map((f) => ({ grandTotal: f.cost.grandTotal })), program.landCostUsd) : 0),
+    [includedFacilities, program]
   );
+  // Each facility's own opex (itemized-or-%-fallback) is already resolved
+  // server-side per facility — summing it here, rather than recomputing from
+  // scratch, is what makes toggling a facility recalc instantly without
+  // needing that facility's raw opex line items loaded on this page.
+  const autoOpex = useMemo(() => includedFacilities.reduce((sum, f) => sum + f.opex, 0), [includedFacilities]);
   const bandLow = useMemo(
-    () => (program ? facilities.reduce((s, f) => s + f.cost.bandLow, 0) + program.landCostUsd : 0),
-    [facilities, program]
+    () => (program ? includedFacilities.reduce((s, f) => s + f.cost.bandLow, 0) + program.landCostUsd : 0),
+    [includedFacilities, program]
   );
   const bandHigh = useMemo(
-    () => (program ? facilities.reduce((s, f) => s + f.cost.bandHigh, 0) + program.landCostUsd : 0),
-    [facilities, program]
+    () => (program ? includedFacilities.reduce((s, f) => s + f.cost.bandHigh, 0) + program.landCostUsd : 0),
+    [includedFacilities, program]
   );
-  const feasibility = useMemo(() => (program ? computeFeasibility(capex, program) : null), [capex, program]);
+  const feasibility = useMemo(() => (program ? computeFeasibility(capex, autoOpex, program) : null), [capex, autoOpex, program]);
 
   function patchProgram(patch: Partial<ProgramRow>) {
     setProgram((p) => (p ? { ...p, ...patch } : p));
@@ -97,6 +107,11 @@ export function useProgramEditor(programId: number) {
   function changeFacilityPhase(projectId: number, phase: Phase) {
     setFacilities((arr) => arr.map((f) => (f.project.id === projectId ? { ...f, project: { ...f.project, phase } } : f)));
     fetch(`/api/projects/${projectId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phase }) });
+  }
+
+  function toggleFacilityIncluded(projectId: number, isIncluded: boolean) {
+    setFacilities((arr) => arr.map((f) => (f.project.id === projectId ? { ...f, project: { ...f.project, isIncluded } } : f)));
+    fetch(`/api/projects/${projectId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isIncluded }) });
   }
 
   async function deleteFacility(projectId: number) {
@@ -143,10 +158,10 @@ export function useProgramEditor(programId: number) {
   }
 
   return {
-    ref, program, facilities, capex, bandLow, bandHigh, totalMonths, feasibility,
+    ref, program, facilities, capex, autoOpex, bandLow, bandHigh, totalMonths, feasibility,
     loading, accessError, role, fxStatus, fxBusy, collaborators,
     country, region, costIndex,
-    patchProgram, addFacility, changeFacilityPhase, deleteFacility, refreshFx,
+    patchProgram, addFacility, changeFacilityPhase, toggleFacilityIncluded, deleteFacility, refreshFx,
     inviteCollaborator, changeCollaboratorRole, removeCollaborator,
   };
 }

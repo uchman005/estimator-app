@@ -11,17 +11,20 @@ export function FacilitiesPanel({
   canDelete,
   onAdd,
   onChangePhase,
+  onToggleIncluded,
   onDelete,
 }: {
   facilities: FacilityRow[];
   canDelete: boolean;
   onAdd: (name: string, phase: Phase) => Promise<void>;
   onChangePhase: (projectId: number, phase: Phase) => void;
+  onToggleIncluded: (projectId: number, isIncluded: boolean) => void;
   onDelete: (projectId: number) => void;
 }) {
   const [name, setName] = useState("");
   const [phase, setPhase] = useState<Phase>("phase_1");
   const [busy, setBusy] = useState(false);
+  const includedCount = facilities.filter((f) => f.project.isIncluded).length;
 
   async function add() {
     if (!name.trim()) return;
@@ -41,10 +44,11 @@ export function FacilitiesPanel({
   }
 
   return (
-    <Panel title="02 — FACILITIES" eyebrow={`${facilities.length} in this program`}>
+    <Panel title="02 — FACILITIES" eyebrow={`${includedCount}/${facilities.length} counted toward feasibility`}>
       <p className="mb-2 text-[11.5px] text-muted">
         The hospital, clinics, housing, school of nursing, mortuary — every building on this site is its own facility with
-        its own BOQ, generator and schedule, rolled up into the program totals below.
+        its own BOQ, generator, schedule and recurring costs, rolled up into the program totals below. Uncheck one to test
+        the program&apos;s feasibility without it, without deleting anything.
       </p>
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <Field label="Facility name" className="min-w-[220px] flex-1">
@@ -77,13 +81,28 @@ export function FacilitiesPanel({
                 {inPhase.map((f) => (
                   <div
                     key={f.project.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-[12px] transition-colors hover:border-blueprint"
+                    className={`flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-[12px] transition-colors hover:border-blueprint ${
+                      f.project.isIncluded ? "" : "opacity-50"
+                    }`}
                   >
-                    <Link href={`/projects/${f.project.id}`} className="min-w-0 flex-1 truncate font-medium text-ink">
-                      {f.project.name}
-                    </Link>
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={f.project.isIncluded}
+                        onChange={(e) => onToggleIncluded(f.project.id, e.target.checked)}
+                        title="Count toward the program's feasibility"
+                      />
+                      <Link href={`/projects/${f.project.id}`} className="min-w-0 flex-1 truncate font-medium text-ink">
+                        {f.project.name}
+                      </Link>
+                    </span>
                     <span className="flex shrink-0 items-center gap-2 text-muted">
-                      <span className="font-mono">{fmtUsd(f.cost.grandTotal)}</span>
+                      <span className="font-mono" title="Capital cost">
+                        {fmtUsd(f.cost.grandTotal)}
+                      </span>
+                      <span className="font-mono" title="Recurring cost, per year">
+                        {fmtUsd(f.opex)}/yr
+                      </span>
                       <span className="font-mono">{fmtMonths(f.schedule.totalMonths)}</span>
                       <Select
                         value={f.project.phase}

@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   computeCost,
   computeSchedule,
+  computeFacilityOpex,
   type AssemblyLite,
   type ProjectItemLite,
   type ProjectSettings,
   type Tier,
 } from "@/lib/calc/engine";
-import type { ItemRow, ProjectRow, ReferenceData, HospitalGenInfo } from "./components/types";
+import type { ItemRow, ProjectRow, ReferenceData, HospitalGenInfo, OpexItemRow } from "./components/types";
 
 interface ApiItem extends ItemRow {
   assembly: AssemblyLite | null;
@@ -17,6 +18,7 @@ interface ProgramSummary {
   id: number;
   name: string;
   escalationPct: number;
+  opexPctOfCapexPerYear: number;
 }
 
 interface CountrySummary {
@@ -32,6 +34,7 @@ export function useProjectEditor(projectId: number) {
   const [country, setCountry] = useState<CountrySummary | null>(null);
   const [fx, setFx] = useState(1);
   const [items, setItems] = useState<ItemRow[]>([]);
+  const [opexItems, setOpexItems] = useState<OpexItemRow[]>([]);
   const [role, setRole] = useState<"owner" | "editor" | "viewer" | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +78,7 @@ export function useProjectEditor(projectId: number) {
         isIncluded: it.isIncluded,
       }))
     );
+    setOpexItems(projData.opexItems as OpexItemRow[]);
     setLoading(false);
   }, [projectId]);
 
@@ -139,6 +143,17 @@ export function useProjectEditor(projectId: number) {
 
   const cost = useMemo(() => (settings && aace ? computeCost(itemsLite, settings, aace) : null), [itemsLite, settings, aace]);
   const schedule = useMemo(() => (settings ? computeSchedule(itemsLite, settings) : null), [itemsLite, settings]);
+  // What the program would estimate THIS facility's opex at if it had no
+  // itemized rows at all — shown as a live reference figure even once real
+  // rows exist, so you can see what you're overriding.
+  const autoOpexEstimate = useMemo(
+    () => (cost && program ? cost.grandTotal * (program.opexPctOfCapexPerYear / 100) : 0),
+    [cost, program]
+  );
+  const opex = useMemo(
+    () => (cost && program ? computeFacilityOpex(opexItems, program.opexPctOfCapexPerYear, cost.grandTotal) : 0),
+    [opexItems, cost, program]
+  );
 
   function patchProject(patch: Partial<ProjectRow>) {
     setProject((p) => (p ? { ...p, ...patch } : p));
@@ -169,6 +184,24 @@ export function useProjectEditor(projectId: number) {
     setItems((arr) => arr.filter((it) => it.id !== id));
     await fetch(`/api/projects/${projectId}/items/${id}`, { method: "DELETE" });
   }
+  async function addOpexItem() {
+    const res = await fetch(`/api/projects/${projectId}/opex-items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: "New recurring cost", category: "other", annualAmountUsd: 0 }),
+    });
+    const row = await res.json();
+    setOpexItems((arr) => [...arr, row]);
+  }
+  function patchOpexItem(id: number, patch: Partial<OpexItemRow>) {
+    setOpexItems((arr) => arr.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+    fetch(`/api/projects/${projectId}/opex-items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+  }
+  async function deleteOpexItem(id: number) {
+    setOpexItems((arr) => arr.filter((it) => it.id !== id));
+    await fetch(`/api/projects/${projectId}/opex-items/${id}`, { method: "DELETE" });
+  }
+
   async function runGenerator(input: { beds: number; tier: Tier; floors: number; floorToFloorM: number; windowToWallRatioPct: number }) {
     setGenBusy(true);
     try {
@@ -186,9 +219,10 @@ export function useProjectEditor(projectId: number) {
   }
 
   return {
-    ref, project, program, country, fx, items, loading, accessError, role, genInfo, genBusy, costIndex,
+    ref, project, program, country, fx, items, opexItems, loading, accessError, role, genInfo, genBusy, costIndex,
     assemblyById, groupedAssemblies, aace,
-    settings, cost, schedule,
+    settings, cost, schedule, opex, autoOpexEstimate,
     patchProject, patchItem, addItem, deleteItem, runGenerator,
+    addOpexItem, patchOpexItem, deleteOpexItem,
   };
 }

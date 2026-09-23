@@ -4,12 +4,14 @@ import type { CostBreakdown } from "@/lib/calc/engine";
 
 export function SummaryPanel({
   cost,
+  opex,
   totalMonths,
   currencyCode,
   currencySymbol,
   fx,
 }: {
   cost: CostBreakdown;
+  opex: number;
   totalMonths: number;
   currencyCode: string;
   currencySymbol?: string;
@@ -21,6 +23,7 @@ export function SummaryPanel({
         <Kpi label="FACILITY SUBTOTAL (USD)" value={fmtUsd(cost.grandTotal)} sub={`${fmtUsd(cost.bandLow)} – ${fmtUsd(cost.bandHigh)}`} />
         <Kpi label={`TOTAL (${currencyCode})`} value={fmtLocal(cost.grandTotal * fx, currencySymbol)} />
         <Kpi label="PROGRAMME DURATION" value={fmtMonths(totalMonths)} />
+        <Kpi label="RECURRING OPEX (USD/YR)" value={fmtUsd(opex)} />
       </div>
       <BreakdownRow label="Core scope construction" value={fmtUsd(cost.coreConstruction)} />
       <BreakdownRow label="Addon construction (included)" value={fmtUsd(cost.addonConstruction)} />

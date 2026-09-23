@@ -35,10 +35,10 @@ export function FeasibilityPanel({ feasibility }: { feasibility: FeasibilityResu
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div className="border border-paper-line px-2 py-1.5">
-          <div className="text-[10px] text-muted">OPERATING BALANCE/YR</div>
+          <div className="text-[10px] text-muted">{feasibility.operatingBalance >= 0 ? "ANNUAL SURPLUS" : "ANNUAL DEFICIT"}</div>
           <div className={`font-mono font-semibold ${feasibility.operatingBalance >= 0 ? "text-green" : "text-clay"}`}>
-            {feasibility.operatingBalance >= 0 ? "+" : ""}
-            {fmtUsd(feasibility.operatingBalance)}
+            {feasibility.operatingBalance >= 0 ? "+" : "−"}
+            {fmtUsd(Math.abs(feasibility.operatingBalance))}/yr
           </div>
         </div>
         <div className="border border-paper-line px-2 py-1.5">

@@ -141,15 +141,38 @@ Location, funding and feasibility all live on the **program**, not the facility:
 
 - **Location** (`countryId`/`regionId`, and therefore the FX rate and cost index)
   is set once for the whole site and shared by every facility in it.
-- **Funding & site costs** (`landCostUsd`, `escalationPct`, `fundedUsd`,
-  `opexOverrideUsd`, `opexPctOfCapexPerYear`, `annualRevenueUsd`) are program-level
-  inputs. Escalation still runs against each facility's *own* schedule length
-  (`computeCost()` in `lib/calc/engine.ts`), it's just one shared rate.
+- **Funding** — the program's budget — is `programs.fundedUsd`, set on the
+  program (`FundingPanel.tsx`). `landCostUsd`, `escalationPct` and
+  `annualRevenueUsd` are program-level too. Escalation still runs against each
+  facility's *own* schedule length (`computeCost()` in `lib/calc/engine.ts`),
+  it's just one shared rate.
 - **The feasibility verdict** (`computeFeasibility()`) is computed once, at the
-  program level, against `computeProgramCapex()` — the sum of every facility's own
-  subtotal (`computeCost().grandTotal`, which no longer includes land) plus the
-  program's land cost. A facility's own page shows its subtotal and confidence
-  band; it doesn't compute or show a feasibility verdict of its own.
+  program level, against `computeProgramCapex()` — the sum of every *included*
+  facility's own subtotal (`computeCost().grandTotal`, which no longer includes
+  land) plus the program's land cost — and `computeProgramOpex()`, the same sum
+  for recurring cost. A facility's own page shows its own subtotal, confidence
+  band and recurring cost; it doesn't compute or show a feasibility verdict of
+  its own.
+- **Recurring/operating cost is itemized per facility, not one program-wide
+  number.** Each facility has its own `project_opex_items` rows (salaries,
+  maintenance, utilities, ...), managed on that facility's own page
+  (`OperatingCostsPanel.tsx`). `computeFacilityOpex()` sums a facility's
+  *included* items; a facility with zero items instead gets an auto-estimate —
+  `programs.opexPctOfCapexPerYear`% of *that facility's own* capex, not the
+  program's. `programs.opexOverrideUsd`, when set above 0, replaces the whole
+  computed program total outright (same "override wins" pattern as an
+  assembly's `rateOverrideUsd`) — see `computeFeasibility()`'s second
+  parameter, precomputed by the caller rather than derived internally.
+- **Every facility can be toggled in or out of the program's totals**
+  (`projects.isIncluded`, default `true`) without deleting it — same "present
+  but off" idea as a BOQ addon's own `isIncluded`. Toggled off, a facility's
+  capex, band and opex all drop out of the program aggregate, and the site
+  programme duration no longer counts its schedule — but its own page, BOQ and
+  recurring costs are untouched, so switching it back on is instant. The
+  checkbox lives in the program's Facilities panel and on `/facilities`;
+  `useProgramEditor.ts` filters to `isIncluded` facilities and recomputes
+  capex/opex/feasibility client-side the moment you click it, no round trip
+  needed to see the number change.
 - **Collaborators** (`program_collaborators`) are granted on the program. One
   invite/role there governs every facility inside it — a facility has no
   collaborators or owner of its own; `requireFacilityRole()` in
@@ -159,9 +182,11 @@ Location, funding and feasibility all live on the **program**, not the facility:
   Infrastructure Commissioning / Improvement / Expansion), letting a program's
   facilities list group by build-out phase.
 
-`GET /api/programs/:id` returns the program plus every facility's own computed
-`cost`/`schedule`, and the aggregate `capex`/`bandLow`/`bandHigh`/`feasibility`
-across all of them — see `app/api/programs/[id]/route.ts`.
+`GET /api/programs/:id` returns the program, every facility (all of them,
+regardless of `isIncluded`, each with its own `cost`/`schedule`/`opex`
+already resolved), and the aggregate `capex`/`bandLow`/`bandHigh`/`opex`/
+`feasibility` computed from the *included* ones only — see
+`app/api/programs/[id]/route.ts`.
 
 ## Getting started
 
@@ -318,9 +343,12 @@ app/
     components/         One file per panel (AaceClassPanel, HospitalGeneratorPanel,
                         BoqPanel + BoqRow [shows a composite assembly's breakdown
                         inline via an expand toggle], SoftCostsPanel,
-                        ScheduleAssumptionsPanel, SummaryPanel, SchedulePanel)
-                        + types.ts — location, funding and collaborators live on
-                        the program instead (see app/programs/[id]/components/)
+                        ScheduleAssumptionsPanel, OperatingCostsPanel [itemized
+                        recurring cost — salaries/maintenance/etc, see
+                        project_opex_items below], SummaryPanel, SchedulePanel)
+                        + types.ts — location, funding, feasibility and
+                        collaborators live on the program instead (see
+                        app/programs/[id]/components/)
 components/
   AppShell.tsx        The persistent sidebar (Programs, Facilities, Rate Book › Main /
                       Sub / Micro Items, user email, sign-out, theme toggle) — wraps
@@ -367,10 +395,12 @@ instead of repeating hex codes.
 | `/api/programs/:id/facilities` | POST | add a facility (a `projects` row) to this program | editor+ |
 | `/api/programs/:id/collaborators` | GET, POST | list access / invite by email+role — governs every facility in the program | viewer+ / owner |
 | `/api/programs/:id/collaborators/:collabId` | PATCH, DELETE | change role / revoke access | owner |
-| `/api/projects/:id` | GET, PATCH, DELETE | one facility's own computed BOQ/cost/schedule / update its settings / delete | viewer+ / editor+ / owner (of the parent program) |
+| `/api/projects/:id` | GET, PATCH, DELETE | one facility's own computed BOQ/cost/schedule/opex / update its settings (incl. `isIncluded`, the program-totals toggle) / delete | viewer+ / editor+ / owner (of the parent program) |
 | `/api/projects/:id/items` | POST | add a BOQ line item | editor+ |
 | `/api/projects/:id/items/:itemId` | PATCH, DELETE | edit / remove a line item | editor+ |
 | `/api/projects/:id/generate-hospital` | POST | run the bed-program generator | editor+ |
+| `/api/projects/:id/opex-items` | POST | add a recurring/operating cost line item (salaries, maintenance, ...) | editor+ |
+| `/api/projects/:id/opex-items/:itemId` | PATCH, DELETE | edit / remove a recurring cost line item | editor+ |
 | `/api/reference?programId=` | GET | countries+regions+FX, currencies, AACE classes, and THAT program's assemblies | viewer+ (on `programId`) |
 | `/api/reference/countries` | POST | add a country (+ a default "National average" region) | any |
 | `/api/reference/countries/:id` | PATCH, DELETE | edit / remove a country | any |
@@ -411,7 +441,14 @@ catalog" above.
 - **`is_addon` and `is_included` are separate booleans on purpose.** `is_addon` is a
   scope classification (discretionary vs core); `is_included` is a live toggle. This
   is what lets a project keep a chapel/park/commercial block present-but-off so its
-  cost delta can be tested without deleting the row.
+  cost delta can be tested without deleting the row. `projects.isIncluded` is the
+  exact same idea one level up — a facility present-but-off within its program.
+- **A facility's recurring cost is either itemized or estimated, never both at
+  once.** `computeFacilityOpex()` sums a facility's own `project_opex_items` if
+  it has any; a facility with zero rows gets `opexPctOfCapexPerYear`% of its
+  own capex instead. Adding one real row to a facility that's been running on
+  the auto-estimate switches it over entirely — there's no "the estimate plus
+  what I've itemized so far" blend.
 - **Department percentage splits are currently hardcoded** in `lib/calc/engine.ts`
   (`HOSPITAL_DEPT_SPLIT`) even though `space_template_items` in the DB already holds
   the same data. The generator route should be switched to read from that table (via

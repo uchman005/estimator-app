@@ -14,6 +14,9 @@ export function ProgramSummaryPanel({
   fx,
   fundingCoverage,
   fundingGap,
+  opex,
+  annualRevenueUsd,
+  operatingBalance,
 }: {
   facilities: FacilityRow[];
   landCostUsd: number;
@@ -26,8 +29,14 @@ export function ProgramSummaryPanel({
   fx: number;
   fundingCoverage: number;
   fundingGap: number;
+  opex: number;
+  annualRevenueUsd: number;
+  operatingBalance: number;
 }) {
+  const included = facilities.filter((f) => f.project.isIncluded);
+  const excludedCount = facilities.length - included.length;
   const facilitiesSubtotal = capex - landCostUsd;
+  const isDeficit = operatingBalance < 0;
 
   return (
     <Panel title="PROGRAM ESTIMATE SUMMARY">
@@ -41,12 +50,32 @@ export function ProgramSummaryPanel({
           sub={fundingGap > 0 ? `gap ${fmtUsd(fundingGap)}` : "fully funded"}
         />
       </div>
-      {facilities.map((f) => (
+
+      {excludedCount > 0 && (
+        <p className="mb-2 text-[10.5px] text-amber">
+          {excludedCount} facilit{excludedCount === 1 ? "y" : "ies"} toggled off — excluded from every total below.
+        </p>
+      )}
+
+      <h3 className="mb-1 mt-1 text-[10.5px] font-semibold tracking-wide text-blueprint">CAPITAL COST</h3>
+      {included.map((f) => (
         <BreakdownRow key={f.project.id} label={f.project.name} value={fmtUsd(f.cost.grandTotal)} />
       ))}
       <BreakdownRow label="Facilities subtotal" value={fmtUsd(facilitiesSubtotal)} />
       <BreakdownRow label="Land" value={fmtUsd(landCostUsd)} />
       <BreakdownRow label="Grand total" value={fmtUsd(capex)} strong />
+
+      <h3 className="mb-1 mt-3 text-[10.5px] font-semibold tracking-wide text-blueprint">ANNUAL OPERATING COST</h3>
+      {included.map((f) => (
+        <BreakdownRow key={f.project.id} label={f.project.name} value={`${fmtUsd(f.opex)}/yr`} />
+      ))}
+      <BreakdownRow label="Total recurring cost" value={`${fmtUsd(opex)}/yr`} />
+      <BreakdownRow label="Annual revenue" value={`${fmtUsd(annualRevenueUsd)}/yr`} />
+      <BreakdownRow
+        label={isDeficit ? "Annual deficit" : "Annual surplus"}
+        value={`${isDeficit ? "−" : "+"}${fmtUsd(Math.abs(operatingBalance))}/yr`}
+        strong
+      />
     </Panel>
   );
 }

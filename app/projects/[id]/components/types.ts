@@ -33,6 +33,7 @@ export interface ProjectRow {
   phase: "phase_1" | "phase_2" | "phase_3";
   name: string;
   author: string | null;
+  isIncluded: boolean;
   aaceClass: number;
   deliveryStrategy: "phased" | "parallel";
   designFeePct: number;
@@ -59,6 +60,25 @@ export interface ItemRow {
   rateOverrideUsd: number | null;
   isAddon: boolean;
   isIncluded: boolean;
+}
+
+export const OPEX_CATEGORIES = ["salaries", "maintenance", "utilities", "supplies", "other"] as const;
+export type OpexCategory = (typeof OPEX_CATEGORIES)[number];
+export const OPEX_CATEGORY_LABEL: Record<OpexCategory, string> = {
+  salaries: "Salaries & staffing",
+  maintenance: "Maintenance",
+  utilities: "Utilities",
+  supplies: "Consumables & supplies",
+  other: "Other",
+};
+
+export interface OpexItemRow {
+  id: number;
+  label: string;
+  category: OpexCategory;
+  annualAmountUsd: number;
+  isIncluded: boolean;
+  notes: string | null;
 }
 
 export interface HospitalGenInfo {

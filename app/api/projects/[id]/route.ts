@@ -46,6 +46,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     project: full.project,
     program: full.program,
     items: full.items,
+    opexItems: full.opexItems,
     country: full.country,
     region: full.region,
     currency: full.currency,
@@ -69,7 +70,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const body = await req.json();
   const allowed = [
-    "name", "author", "phase", "aaceClass", "deliveryStrategy",
+    "name", "author", "phase", "isIncluded", "aaceClass", "deliveryStrategy",
     "designFeePct", "pmFeePct", "permitFeePct",
     "contingencyPctOverride", "fastTrackPremiumPct", "landMonths", "designMonths",
     "designPermitOverlapPct", "commissionMonths", "startDate",

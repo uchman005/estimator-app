@@ -8,6 +8,7 @@ import { HospitalGeneratorPanel } from "./components/HospitalGeneratorPanel";
 import { BoqPanel } from "./components/BoqPanel";
 import { SoftCostsPanel } from "./components/SoftCostsPanel";
 import { ScheduleAssumptionsPanel } from "./components/ScheduleAssumptionsPanel";
+import { OperatingCostsPanel } from "./components/OperatingCostsPanel";
 import { SummaryPanel } from "./components/SummaryPanel";
 import { SchedulePanel } from "./components/SchedulePanel";
 
@@ -69,6 +70,12 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
             You have view-only access to this facility — changes are disabled.
           </div>
         )}
+        {!s.project.isIncluded && (
+          <div className="mb-5 rounded-xl border border-clay bg-surface-alt px-3 py-2 text-[12px] text-ink">
+            This facility is toggled <b>out</b> of the program&apos;s totals — its cost and opex aren&apos;t counted toward
+            the program&apos;s feasibility right now. Toggle it back on from the program&apos;s Facilities panel.
+          </div>
+        )}
 
         <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[1.55fr_1fr]">
           <fieldset disabled={!canEdit} className="space-y-5 disabled:opacity-70">
@@ -94,11 +101,21 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
 
             <SoftCostsPanel project={s.project} onChange={s.patchProject} />
             <ScheduleAssumptionsPanel project={s.project} onChange={s.patchProject} />
+
+            <OperatingCostsPanel
+              items={s.opexItems}
+              opexPctOfCapexPerYear={s.program.opexPctOfCapexPerYear}
+              autoEstimate={s.autoOpexEstimate}
+              onAdd={s.addOpexItem}
+              onChange={s.patchOpexItem}
+              onDelete={s.deleteOpexItem}
+            />
           </fieldset>
 
           <div className="space-y-5 lg:sticky lg:top-5">
             <SummaryPanel
               cost={s.cost}
+              opex={s.opex}
               totalMonths={s.schedule.totalMonths}
               currencyCode={s.country.currencyCode}
               currencySymbol={currencySymbol}

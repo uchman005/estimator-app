@@ -377,6 +377,11 @@ export const projects = sqliteTable("projects", {
   phase: text("phase").notNull().default("phase_1"), // 'phase_1' | 'phase_2' | 'phase_3' — Infrastructure Commissioning / Improvement / Expansion
   name: text("name").notNull(),
   author: text("author"),
+  // Toggle a facility in/out of its program's totals (capex AND recurring
+  // opex) without deleting it — same "present but off" idea as
+  // project_items.isIncluded, one level up. Lets you ask "does this program
+  // still pencil out without the school of nursing" live.
+  isIncluded: integer("is_included", { mode: "boolean" }).notNull().default(true),
   aaceClass: integer("aace_class").notNull().default(5),
   deliveryStrategy: text("delivery_strategy").notNull().default("phased"), // 'phased' | 'parallel'
 
@@ -424,6 +429,24 @@ export const projectItems = sqliteTable("project_items", {
   isIncluded: integer("is_included", { mode: "boolean" }).notNull().default(true),
 
   genTag: text("gen_tag"), // e.g. 'hospital-generator', so a re-run can replace its own rows cleanly
+  notes: text("notes"),
+});
+
+// A facility's own recurring/operating cost line items — salaries,
+// maintenance, utilities, etc. Same shape/spirit as project_items but for
+// annual OPEX instead of one-time capex. A facility with zero rows here
+// falls back to the program's opexPctOfCapexPerYear applied to ITS OWN capex
+// subtotal (see computeFacilityOpex() in lib/calc/engine.ts) — rows only
+// need entering where you want a real number instead of that estimate.
+export const projectOpexItems = sqliteTable("project_opex_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  label: text("label").notNull(), // e.g. 'Nursing & clinical staff salaries'
+  category: text("category").notNull().default("other"), // 'salaries' | 'maintenance' | 'utilities' | 'supplies' | 'other'
+  annualAmountUsd: real("annual_amount_usd").notNull().default(0),
+  isIncluded: integer("is_included", { mode: "boolean" }).notNull().default(true),
   notes: text("notes"),
 });
 

@@ -16,6 +16,7 @@ interface FacilitySummary {
   programId: number;
   name: string;
   phase: Phase;
+  isIncluded: boolean;
 }
 
 interface ProgramWithFacilities {
@@ -106,6 +107,15 @@ function ProgramGroup({ program, onChanged }: { program: ProgramWithFacilities; 
     onChanged();
   }
 
+  async function toggleIncluded(projectId: number, isIncluded: boolean) {
+    await fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isIncluded }),
+    });
+    onChanged();
+  }
+
   async function remove(projectId: number, projectName: string) {
     if (!window.confirm(`Delete "${projectName}"? This removes its whole BOQ and can't be undone.`)) return;
     await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
@@ -157,11 +167,23 @@ function ProgramGroup({ program, onChanged }: { program: ProgramWithFacilities; 
               {program.facilities.map((f) => (
                 <div
                   key={f.id}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-[12px] transition-colors hover:border-blueprint"
+                  className={`flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-[12px] transition-colors hover:border-blueprint ${
+                    f.isIncluded ? "" : "opacity-50"
+                  }`}
                 >
-                  <Link href={`/projects/${f.id}`} className="min-w-0 flex-1 truncate font-medium text-ink">
-                    {f.name}
-                  </Link>
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    {canEdit && (
+                      <input
+                        type="checkbox"
+                        checked={f.isIncluded}
+                        onChange={(e) => toggleIncluded(f.id, e.target.checked)}
+                        title="Count toward the program's feasibility"
+                      />
+                    )}
+                    <Link href={`/projects/${f.id}`} className="min-w-0 flex-1 truncate font-medium text-ink">
+                      {f.name}
+                    </Link>
+                  </span>
                   <span className="flex shrink-0 items-center gap-2">
                     {canEdit ? (
                       <Select

@@ -90,6 +90,7 @@ export default function ProgramEditor({ programId, currentUserEmail }: { program
               canDelete={isOwner}
               onAdd={s.addFacility}
               onChangePhase={s.changeFacilityPhase}
+              onToggleIncluded={s.toggleFacilityIncluded}
               onDelete={s.deleteFacility}
             />
 
@@ -118,6 +119,9 @@ export default function ProgramEditor({ programId, currentUserEmail }: { program
               fx={s.country.fx}
               fundingCoverage={s.feasibility.coverage}
               fundingGap={s.feasibility.gap}
+              opex={s.autoOpex}
+              annualRevenueUsd={s.program.annualRevenueUsd}
+              operatingBalance={s.feasibility.operatingBalance}
             />
             <FeasibilityPanel feasibility={s.feasibility} />
           </div>

@@ -42,8 +42,10 @@ export interface ProgramRow {
   annualRevenueUsd: number;
 }
 
-// One facility inside the program, with its own computed subtotal/schedule —
-// what GET /api/programs/:id returns per facility.
+// One facility inside the program, with its own computed subtotal/schedule/
+// opex — what GET /api/programs/:id returns per facility. Every facility is
+// included in this list regardless of isIncluded — toggling it off excludes
+// it from the program's aggregate totals without hiding it from view.
 export interface FacilityRow {
   project: {
     id: number;
@@ -51,10 +53,12 @@ export interface FacilityRow {
     phase: Phase;
     name: string;
     author: string | null;
+    isIncluded: boolean;
     aaceClass: number;
   };
   cost: CostBreakdown;
   schedule: ScheduleBreakdown;
+  opex: number; // itemized-or-%-fallback annual recurring cost, this facility's own
 }
 
 export interface CollaboratorRow {

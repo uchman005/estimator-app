@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   const programIds = [...owned.map((p) => p.id), ...sharedRows.map((r) => r.program.id)];
   const facilityRows = programIds.length
     ? await db
-        .select({ id: projects.id, programId: projects.programId, name: projects.name, phase: projects.phase })
+        .select({ id: projects.id, programId: projects.programId, name: projects.name, phase: projects.phase, isIncluded: projects.isIncluded })
         .from(projects)
         .where(inArray(projects.programId, programIds))
     : [];
