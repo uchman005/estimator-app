@@ -1,5 +1,4 @@
-import type { AaceClass, AssemblyLite, CostBreakdown, ScheduleBreakdown, Tier } from "@/lib/calc/engine";
-import { PHASE_LABEL, PHASE_ORDER, type Phase } from "@/lib/phases";
+import type { AaceClass, CostBreakdown, ScheduleBreakdown } from "@/lib/calc/engine";
 
 export interface RegionRow {
   id: number;
@@ -19,11 +18,21 @@ export interface CountryRow {
   fxSource: string | null;
 }
 
+// A building template, just the fields the "add facility" form needs (not
+// its division rates — that breakdown is only needed on a facility's own
+// page, see app/projects/[id]/components/types.ts's richer BuildingTemplateRow).
+export interface BuildingTemplateSummary {
+  slug: string;
+  name: string;
+  defaultFloors: number;
+  referenceGfaM2: number;
+}
+
 export interface ReferenceData {
   countries: CountryRow[];
   currencies: { code: string; symbol: string }[];
   aaceClasses: AaceClass[];
-  assemblies: AssemblyLite[];
+  buildingTemplates: BuildingTemplateSummary[];
 }
 
 // A Program — the elevated level: a site/campus/portfolio that owns
@@ -50,12 +59,16 @@ export interface FacilityRow {
   project: {
     id: number;
     programId: number;
-    phase: Phase;
+    facilityType: string;
     name: string;
     author: string | null;
     isIncluded: boolean;
     aaceClass: number;
   };
+  // Only what's needed to derive this facility's GFA (a generated building
+  // row's quantity — see FacilitiesPanel.tsx's costPerM2) — the real rows
+  // carry more fields, structural typing just ignores the rest.
+  items: { customUnifCode: string | null; quantity: number }[];
   cost: CostBreakdown;
   schedule: ScheduleBreakdown;
   opex: number; // itemized-or-%-fallback annual recurring cost, this facility's own
@@ -68,6 +81,3 @@ export interface CollaboratorRow {
   status: "pending" | "accepted";
   userName: string | null;
 }
-
-export type { Tier, Phase };
-export { PHASE_LABEL, PHASE_ORDER };

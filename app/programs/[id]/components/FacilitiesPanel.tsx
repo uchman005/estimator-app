@@ -1,41 +1,50 @@
-import { useState } from "react";
 import Link from "next/link";
 import { Panel } from "@/components/ui/Panel";
-import { Field, Input, Select } from "@/components/ui/Form";
-import { Button } from "@/components/ui/Button";
+import { FacilityTypeField } from "@/components/ui/FacilityTypeField";
+import { AddFacilityForm, type AddFacilityInput } from "@/components/ui/AddFacilityForm";
 import { fmtUsd, fmtMonths } from "@/components/ui/Metrics";
-import { PHASE_LABEL, PHASE_ORDER, type FacilityRow, type Phase } from "./types";
+import { FLAT_FACILITY_TYPE_PRESETS } from "@/lib/facilityTypes";
+import type { FacilityRow, BuildingTemplateSummary } from "./types";
+
+// Building template names first (in reference order), then the flat
+// presets — so a program with facilities of both kinds still gets a
+// sensible, stable grouping, matching the order they're offered in
+// AddFacilityForm.
+function groupOrder(facilities: FacilityRow[], buildingTemplates: BuildingTemplateSummary[]): string[] {
+  const inUse = new Set(facilities.map((f) => f.project.facilityType));
+  const buildingNames = buildingTemplates.map((t) => t.name).filter((n) => inUse.has(n));
+  const flat = FLAT_FACILITY_TYPE_PRESETS.filter((t) => inUse.has(t));
+  const known = new Set([...buildingNames, ...flat]);
+  const custom = [...inUse].filter((t) => !known.has(t)).sort();
+  return [...buildingNames, ...flat, ...custom];
+}
+
+// Every row the building generator writes shares the same quantity (the GFA
+// it was generated at) — so the first generated division row's quantity IS
+// the facility's GFA. Flat/vehicle facilities have no such row → null.
+function gfaM2(f: FacilityRow): number | null {
+  return f.items.find((it) => it.customUnifCode && /^[A-G]$/.test(it.customUnifCode))?.quantity ?? null;
+}
 
 export function FacilitiesPanel({
   facilities,
+  buildingTemplates,
   canDelete,
   onAdd,
-  onChangePhase,
+  onChangeType,
   onToggleIncluded,
   onDelete,
 }: {
   facilities: FacilityRow[];
+  buildingTemplates: BuildingTemplateSummary[];
   canDelete: boolean;
-  onAdd: (name: string, phase: Phase) => Promise<void>;
-  onChangePhase: (projectId: number, phase: Phase) => void;
+  onAdd: (input: AddFacilityInput) => Promise<void>;
+  onChangeType: (projectId: number, facilityType: string) => void;
   onToggleIncluded: (projectId: number, isIncluded: boolean) => void;
   onDelete: (projectId: number) => void;
 }) {
-  const [name, setName] = useState("");
-  const [phase, setPhase] = useState<Phase>("phase_1");
-  const [busy, setBusy] = useState(false);
   const includedCount = facilities.filter((f) => f.project.isIncluded).length;
-
-  async function add() {
-    if (!name.trim()) return;
-    setBusy(true);
-    try {
-      await onAdd(name.trim(), phase);
-      setName("");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const typePresets = [...buildingTemplates.map((t) => t.name), ...FLAT_FACILITY_TYPE_PRESETS];
 
   function remove(projectId: number, projectName: string) {
     if (window.confirm(`Delete "${projectName}"? This removes its whole BOQ and can't be undone.`)) {
@@ -48,37 +57,25 @@ export function FacilitiesPanel({
       <p className="mb-2 text-[11.5px] text-muted">
         The hospital, clinics, housing, school of nursing, mortuary — every building on this site is its own facility with
         its own BOQ, generator, schedule and recurring costs, rolled up into the program totals below. Uncheck one to test
-        the program&apos;s feasibility without it, without deleting anything.
+        the program&apos;s feasibility without it, without deleting anything. Pick a building type (Alpha Clinic, Remote
+        Clinic, ...) and its BOQ is generated immediately; a flat type (Ambulance, ICT Hub, ...) starts empty for you to
+        price by hand.
       </p>
-      <div className="mb-3 flex flex-wrap items-end gap-2">
-        <Field label="Facility name" className="min-w-[220px] flex-1">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. 200-Bed Hospital, Level V" />
-        </Field>
-        <Field label="Phase">
-          <Select value={phase} onChange={(e) => setPhase(e.target.value as Phase)}>
-            {PHASE_ORDER.map((p) => (
-              <option key={p} value={p}>
-                {PHASE_LABEL[p]}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Button onClick={add} disabled={busy || !name.trim()}>
-          {busy ? "Adding…" : "+ Add facility"}
-        </Button>
+      <div className="mb-3">
+        <AddFacilityForm buildingTemplates={buildingTemplates} onAdd={onAdd} />
       </div>
 
       {facilities.length === 0 ? (
         <p className="text-[11.5px] text-muted">No facilities yet — add the first one above.</p>
       ) : (
-        PHASE_ORDER.map((p) => {
-          const inPhase = facilities.filter((f) => f.project.phase === p);
-          if (inPhase.length === 0) return null;
+        groupOrder(facilities, buildingTemplates).map((type) => {
+          const inGroup = facilities.filter((f) => f.project.facilityType === type);
+          if (inGroup.length === 0) return null;
           return (
-            <div key={p} className="mb-3">
-              <div className="mb-1.5 text-[11px] font-semibold tracking-wide text-blueprint">{PHASE_LABEL[p]}</div>
+            <div key={type} className="mb-3">
+              <div className="mb-1.5 text-[11px] font-semibold tracking-wide text-blueprint">{type}</div>
               <div className="space-y-1.5">
-                {inPhase.map((f) => (
+                {inGroup.map((f) => (
                   <div
                     key={f.project.id}
                     className={`flex items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-[12px] transition-colors hover:border-blueprint ${
@@ -100,21 +97,21 @@ export function FacilitiesPanel({
                       <span className="font-mono" title="Capital cost">
                         {fmtUsd(f.cost.grandTotal)}
                       </span>
+                      {gfaM2(f) != null && (
+                        <span className="font-mono" title="All-in cost per m² of GFA">
+                          {fmtUsd(f.cost.grandTotal / gfaM2(f)!)}/m²
+                        </span>
+                      )}
                       <span className="font-mono" title="Recurring cost, per year">
                         {fmtUsd(f.opex)}/yr
                       </span>
                       <span className="font-mono">{fmtMonths(f.schedule.totalMonths)}</span>
-                      <Select
-                        value={f.project.phase}
-                        onChange={(e) => onChangePhase(f.project.id, e.target.value as Phase)}
-                        className="!w-auto py-1 text-[11px]"
-                      >
-                        {PHASE_ORDER.map((ph) => (
-                          <option key={ph} value={ph}>
-                            {PHASE_LABEL[ph].split(" — ")[0]}
-                          </option>
-                        ))}
-                      </Select>
+                      <FacilityTypeField
+                        value={f.project.facilityType}
+                        onChange={(v) => onChangeType(f.project.id, v)}
+                        presets={typePresets}
+                        compact
+                      />
                       {canDelete && (
                         <button
                           onClick={() => remove(f.project.id, f.project.name)}

@@ -2,15 +2,12 @@ import { Panel } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
 import { fmtUsd } from "@/components/ui/Metrics";
 import { BoqRow } from "./BoqRow";
-import type { AssemblyLite } from "@/lib/calc/engine";
 import type { ItemRow } from "./types";
 
-const COLUMNS = ["Class", "Component", "Qty", "Tier/Material", "Rate", "Addon", "On", "Subtotal", ""];
+const COLUMNS = ["Div", "Description", "Division", "Qty", "Unit", "Rate ($)", "Addon", "On", "Subtotal", ""];
 
 export function BoqPanel({
   items,
-  assemblyById,
-  groupedAssemblies,
   costIndex,
   coreSubtotal,
   addonSubtotal,
@@ -19,8 +16,6 @@ export function BoqPanel({
   onAddItem,
 }: {
   items: ItemRow[];
-  assemblyById: Map<number, AssemblyLite>;
-  groupedAssemblies: Record<string, AssemblyLite[]>;
   costIndex: number;
   coreSubtotal: number;
   addonSubtotal: number;
@@ -31,8 +26,8 @@ export function BoqPanel({
   return (
     <Panel title="04 — BILL OF QUANTITIES (UniFormat II classified)">
       <p className="mb-2 text-[11.5px] text-muted">
-        Every row carries a UniFormat II code. Addon items can be switched off without deleting them. Assemblies with material
-        options (walls, windows, doors) show a material dropdown instead of a tier.
+        Generated building-division rows (from the template below) and flat-priced items (vehicles, equipment) live side by
+        side here — every row is just quantity × rate. Addon items can be switched off without deleting them.
       </p>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-[12px]">
@@ -50,8 +45,6 @@ export function BoqPanel({
               <BoqRow
                 key={item.id}
                 item={item}
-                assembly={item.assemblyId != null ? assemblyById.get(item.assemblyId) ?? null : null}
-                groupedAssemblies={groupedAssemblies}
                 costIndex={costIndex}
                 onChange={(patch) => onChangeItem(item.id, patch)}
                 onDelete={() => onDeleteItem(item.id)}
@@ -60,14 +53,14 @@ export function BoqPanel({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-ink font-semibold">
-              <td colSpan={7} className="py-1.5">
+              <td colSpan={8} className="py-1.5">
                 Core scope subtotal (indexed, included rows)
               </td>
               <td className="py-1.5 text-right font-mono">{fmtUsd(coreSubtotal)}</td>
               <td />
             </tr>
             <tr className="font-semibold">
-              <td colSpan={7} className="py-1.5">
+              <td colSpan={8} className="py-1.5">
                 Addon subtotal (indexed, included addon rows)
               </td>
               <td className="py-1.5 text-right font-mono">{fmtUsd(addonSubtotal)}</td>

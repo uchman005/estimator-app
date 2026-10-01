@@ -1,5 +1,5 @@
 import { Panel } from "@/components/ui/Panel";
-import { Kpi, BreakdownRow, fmtUsd, fmtLocal, fmtMonths } from "@/components/ui/Metrics";
+import { Kpi, BreakdownRow, fmtUsd, fmtLocal, fmtMonths, fmtPct } from "@/components/ui/Metrics";
 import type { FacilityRow } from "./types";
 
 export function ProgramSummaryPanel({
@@ -46,7 +46,7 @@ export function ProgramSummaryPanel({
         <Kpi label="SITE PROGRAMME DURATION" value={fmtMonths(totalMonths)} sub="longest facility on the critical path" />
         <Kpi
           label="FUNDING COVERAGE"
-          value={`${Math.round(fundingCoverage)}%`}
+          value={fmtPct(fundingCoverage)}
           sub={fundingGap > 0 ? `gap ${fmtUsd(fundingGap)}` : "fully funded"}
         />
       </div>

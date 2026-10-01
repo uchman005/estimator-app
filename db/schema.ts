@@ -101,212 +101,6 @@ export const aaceClasses = sqliteTable("aace_classes", {
 });
 
 /* -------------------------------------------------------------------- */
-/*  Building types & space-programming templates                        */
-/* -------------------------------------------------------------------- */
-
-export const buildingTypes = sqliteTable("building_types", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  name: text("name").notNull(), // 'Acute Care Hospital'
-  driverUnit: text("driver_unit").notNull(), // 'bed' | 'student' | 'sqm' ...
-});
-
-// One row per building type: how much GFA per driver unit at each quality tier.
-export const spaceTemplates = sqliteTable("space_templates", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  buildingTypeId: integer("building_type_id")
-    .notNull()
-    .references(() => buildingTypes.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  gfaPerDriverBasic: real("gfa_per_driver_basic").notNull(),
-  gfaPerDriverStandard: real("gfa_per_driver_standard").notNull(),
-  gfaPerDriverPremium: real("gfa_per_driver_premium").notNull(),
-});
-
-// Departmental (or other) split of that GFA — percentages should sum to <= 100.
-export const spaceTemplateItems = sqliteTable("space_template_items", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  templateId: integer("template_id")
-    .notNull()
-    .references(() => spaceTemplates.id, { onDelete: "cascade" }),
-  label: text("label").notNull(), // 'Inpatient Nursing Units'
-  pctOfGfa: real("pct_of_gfa").notNull(),
-  assemblyId: integer("assembly_id").references(() => assemblies.id),
-});
-
-/* -------------------------------------------------------------------- */
-/*  Assemblies (priced, classified components) & material/labour variants */
-/* -------------------------------------------------------------------- */
-
-export const assemblies = sqliteTable("assemblies", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  // Every assembly ("Main Item") belongs to exactly one program's catalog —
-  // see lib/catalogClone.ts for how a program's catalog is cloned into
-  // another program (including the shared template) rather than shared
-  // directly.
-  programId: integer("program_id")
-    .notNull()
-    .references(() => programs.id, { onDelete: "cascade" }),
-  classNodeId: integer("class_node_id")
-    .notNull()
-    .references(() => classNodes.id),
-  name: text("name").notNull(),
-  slug: text("slug"), // stable machine key (e.g. 'ext_wall') used by generators to find a specific assembly
-  unit: text("unit").notNull(), // 'm²', 'unit', 'car', 'stair core', ...
-  // How this assembly's rate is determined:
-  //  'tier'      — one flat rate per quality tier (assembly_tier_rates)
-  //  'variant'   — pick ONE of several named material/labour options (assembly_variants)
-  //  'composite' — rate is the SUM of its macro_items' micro_items, at the
-  //                selected tier. This is the "makeup items" model: nobody
-  //                sets the assembly's rate directly, it's always the sum of
-  //                what's underneath it. assembly_tier_rates/variants are
-  //                unused (and should stay empty) for composite assemblies.
-  pricingMode: text("pricing_mode").notNull().default("tier"),
-  hasVariants: integer("has_variants", { mode: "boolean" })
-    .notNull()
-    .default(false),
-  // duration model (parametric): baseDurationMonths * (qty/baseSize)^exponent
-  baseDurationMonths: real("base_duration_months").notNull().default(3),
-  baseSize: real("base_size").notNull().default(1),
-  durationExponent: real("duration_exponent").notNull().default(0.3),
-  phase: text("phase").notNull().default("vertical"), // 'site' | 'vertical' | 'procurement'
-  isCustom: integer("is_custom", { mode: "boolean" }).notNull().default(false),
-});
-
-// Used when hasVariants = false: one rate per quality tier.
-export const assemblyTierRates = sqliteTable("assembly_tier_rates", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  assemblyId: integer("assembly_id")
-    .notNull()
-    .references(() => assemblies.id, { onDelete: "cascade" }),
-  tier: text("tier").notNull(), // 'basic' | 'standard' | 'premium'
-  unitRateUsd: real("unit_rate_usd").notNull(),
-});
-
-// Used when hasVariants = true: material/labour options, e.g. wall systems.
-export const assemblyVariants = sqliteTable("assembly_variants", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  assemblyId: integer("assembly_id")
-    .notNull()
-    .references(() => assemblies.id, { onDelete: "cascade" }),
-  label: text("label").notNull(), // 'Precast concrete panel'
-  unitRateUsd: real("unit_rate_usd").notNull(),
-  laborPct: real("labor_pct").notNull(),
-  materialPct: real("material_pct").notNull(),
-  sourceNote: text("source_note"),
-});
-
-/* -------------------------------------------------------------------- */
-/*  Composite pricing: a four-level tree under any 'composite' assembly */
-/*  (the "Main Item"):                                                  */
-/*    assembly (Main Item) → macro_items → sub_items → micro_items      */
-/*                                                                        */
-/*  sub_items and micro_items are a REUSABLE LIBRARY, not owned by any   */
-/*  one parent. A "Theatre door (fire-rated)" micro-item or a "Theatre   */
-/*  Envelope" sub-item is defined once and can be assembled into any     */
-/*  number of macro-items/sub-items, each with its own quantity — the    */
-/*  same door might be quantity 2 in one theatre and quantity 4 in       */
-/*  another. That quantity lives on the JOIN (macro_item_sub_items /     */
-/*  sub_item_micro_items), never on the library row itself. Only         */
-/*  micro_items carry a price (via micro_item_rates); every level above  */
-/*  it is purely a sum of quantity × (whatever's under it) — see         */
-/*  compositeAssemblyRate() and subItemRate() in lib/calc/engine.ts, the */
-/*  only place that sum happens. Editing a micro-item's rate, or a       */
-/*  join row's quantity, is the ONE thing that ever changes what a       */
-/*  composite assembly costs — and it changes everywhere that library    */
-/*  row is assembled into, by design.                                    */
-/* -------------------------------------------------------------------- */
-
-export const macroItems = sqliteTable("macro_items", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  assemblyId: integer("assembly_id")
-    .notNull()
-    .references(() => assemblies.id, { onDelete: "cascade" }),
-  name: text("name").notNull(), // e.g. 'Structural Work' — one of up to ~1000 that make up the assembly ("Main Item")
-  sortOrder: integer("sort_order").notNull().default(0),
-  sourceNote: text("source_note"), // where this macro-item's split came from, if worth recording
-  // Labour to coordinate/commission the assembled sub-items into this
-  // macro-item as a working whole — on top of, not instead of, whatever
-  // those sub-items already cost. Zero by default: most macro-items (a
-  // blended per-m² rate, say) need none. Set it only where combining
-  // several sub-items into this one genuinely takes extra work.
-  labourBasic: real("labour_basic").notNull().default(0),
-  labourStandard: real("labour_standard").notNull().default(0),
-  labourPremium: real("labour_premium").notNull().default(0),
-});
-
-// Library entry — NOT owned by a macro-item. Reusable across as many
-// macro-items (in any assembly) as want to assemble it in — WITHIN THE SAME
-// PROGRAM's catalog.
-export const subItems = sqliteTable("sub_items", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  programId: integer("program_id")
-    .notNull()
-    .references(() => programs.id, { onDelete: "cascade" }),
-  name: text("name").notNull(), // e.g. 'Theatre Envelope'
-  sourceNote: text("source_note"),
-  // Labour to assemble/fit the joined micro-items into this sub-item as a
-  // working unit — additive on top of the micro-items' own quantity×rate
-  // sum. Zero by default. This is the "space for labour cost if an item
-  // needs assembling" — a plain $/unit-rate micro-item sitting alone
-  // usually doesn't need it; a door+wall+window becoming one theatre
-  // envelope typically does.
-  labourBasic: real("labour_basic").notNull().default(0),
-  labourStandard: real("labour_standard").notNull().default(0),
-  labourPremium: real("labour_premium").notNull().default(0),
-});
-
-// Join: which sub-items make up a given macro-item, and how many.
-export const macroItemSubItems = sqliteTable("macro_item_sub_items", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  macroItemId: integer("macro_item_id")
-    .notNull()
-    .references(() => macroItems.id, { onDelete: "cascade" }),
-  subItemId: integer("sub_item_id")
-    .notNull()
-    .references(() => subItems.id, { onDelete: "cascade" }),
-  quantity: real("quantity").notNull().default(1), // how many of this sub-item make up the macro-item
-  sortOrder: integer("sort_order").notNull().default(0),
-});
-
-// Library entry — NOT owned by a sub-item. Reusable across as many
-// sub-items as want to assemble it in — WITHIN THE SAME PROGRAM's catalog.
-export const microItems = sqliteTable("micro_items", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  programId: integer("program_id")
-    .notNull()
-    .references(() => programs.id, { onDelete: "cascade" }),
-  name: text("name").notNull(), // e.g. 'Theatre door (fire-rated)' — the actual priced leaf
-  unit: text("unit").notNull(), // its OWN unit — 'door', 'm²', 'beam'
-  sourceNote: text("source_note"),
-});
-
-// Join: which micro-items make up a given sub-item, and how many.
-export const subItemMicroItems = sqliteTable("sub_item_micro_items", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  subItemId: integer("sub_item_id")
-    .notNull()
-    .references(() => subItems.id, { onDelete: "cascade" }),
-  microItemId: integer("micro_item_id")
-    .notNull()
-    .references(() => microItems.id, { onDelete: "cascade" }),
-  // How many of this micro-item make up ONE instance of the sub-item, e.g.
-  // 2 doors, 45 m² of wall. Defaults to 1 so a plain "$/unit rate"
-  // micro-item (the original per-m²-GFA style) behaves exactly as before —
-  // quantity 1 makes qty*rate collapse to just rate.
-  quantity: real("quantity").notNull().default(1),
-  sortOrder: integer("sort_order").notNull().default(0),
-});
-
-export const microItemRates = sqliteTable("micro_item_rates", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  microItemId: integer("micro_item_id")
-    .notNull()
-    .references(() => microItems.id, { onDelete: "cascade" }),
-  tier: text("tier").notNull(), // 'basic' | 'standard' | 'premium'
-  unitRateUsd: real("unit_rate_usd").notNull(),
-});
-
-/* -------------------------------------------------------------------- */
 /*  Programs: the elevated level — a site/campus/portfolio that owns    */
 /*  location, funding, feasibility and sharing for all of its           */
 /*  facilities (see mighty-squishing-kettle.md)                        */
@@ -316,11 +110,6 @@ export const programs = sqliteTable("programs", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   author: text("author"),
-  // The one seeded "Default Starter Catalog" program (see db/seed.ts and
-  // lib/catalogClone.ts). Hidden from dashboards/facility listings; anyone
-  // can IMPORT from it into their own program's catalog regardless of
-  // ownership, since it's the shared starting point, not private data.
-  isTemplate: integer("is_template", { mode: "boolean" }).notNull().default(false),
   ownerId: integer("owner_id")
     .notNull()
     .references(() => users.id),
@@ -374,7 +163,11 @@ export const projects = sqliteTable("projects", {
   programId: integer("program_id")
     .notNull()
     .references(() => programs.id, { onDelete: "cascade" }),
-  phase: text("phase").notNull().default("phase_1"), // 'phase_1' | 'phase_2' | 'phase_3' — Infrastructure Commissioning / Improvement / Expansion
+  // What kind of facility this is — a handful of presets (Hospital, Ambulance,
+  // Residential Apartment, ICT Hub) or free text for anything else. Purely
+  // descriptive (grouping/labeling in the facilities lists), never read by
+  // cost or schedule computation — see lib/facilityTypes.ts.
+  facilityType: text("facility_type").notNull().default("Hospital"),
   name: text("name").notNull(),
   author: text("author"),
   // Toggle a facility in/out of its program's totals (capex AND recurring
@@ -407,29 +200,67 @@ export const projects = sqliteTable("projects", {
     .default(sql`(CURRENT_TIMESTAMP)`),
 });
 
+// A facility's BOQ line item. Every row is a flat quantity × rate — there's
+// no catalog to defer to — used identically for a generated
+// building-division row (see buildingTemplates below) and a manually typed
+// "Ambulance, $85,000" row.
 export const projectItems = sqliteTable("project_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   projectId: integer("project_id")
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
-  assemblyId: integer("assembly_id").references(() => assemblies.id),
   classNodeId: integer("class_node_id").references(() => classNodes.id),
 
-  // for custom (non-catalog) rows:
   customLabel: text("custom_label"),
   customUnit: text("custom_unit"),
-  customUnifCode: text("custom_unif_code"),
+  customUnifCode: text("custom_unif_code"), // UniFormat division code, e.g. 'B' for a generated Shell row
 
   quantity: real("quantity").notNull().default(1),
-  tier: text("tier").default("standard"), // used when assembly has no variants
-  variantId: integer("variant_id").references(() => assemblyVariants.id), // used when it does
-  rateOverrideUsd: real("rate_override_usd"), // wins over tier/variant rate if set
+  rateUsd: real("rate_usd").notNull().default(0),
+
+  // Schedule inputs, one set per row (there's no shared assembly to read
+  // them from anymore) — rowDurationMonths() in lib/calc/engine.ts reads
+  // these directly off the row. Set by the building generator per division;
+  // sensible defaults for a manually-added row.
+  phase: text("phase").notNull().default("vertical"), // 'site' | 'vertical' | 'procurement'
+  baseDurationMonths: real("base_duration_months").notNull().default(1),
+  baseSize: real("base_size").notNull().default(1),
+  durationExponent: real("duration_exponent").notNull().default(0.2),
 
   isAddon: integer("is_addon", { mode: "boolean" }).notNull().default(false),
   isIncluded: integer("is_included", { mode: "boolean" }).notNull().default(true),
 
-  genTag: text("gen_tag"), // e.g. 'hospital-generator', so a re-run can replace its own rows cleanly
+  genTag: text("gen_tag"), // e.g. 'building-template', so a re-run can replace its own rows cleanly
   notes: text("notes"),
+});
+
+// Building templates: modeled square-meter cost estimating — a small,
+// global reference list (like countries/aaceClasses — not program-scoped,
+// since a rate is just a flat $/m² number now, no per-program customization
+// machinery needed). Pick a template, type a GFA, and
+// generateBuildingFromTemplate() in lib/calc/engine.ts turns it into one
+// project_items row per UniFormat division (A-G), at that division's
+// baseRateUsdPerM2 × GFA — scaled by the facility's program's costIndex
+// exactly like every other row already is.
+
+export const buildingTemplates = sqliteTable("building_templates", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  slug: text("slug").notNull().unique(), // e.g. 'rural_clinic' — matched by the generator
+  name: text("name").notNull(), // 'Rural / Remote Clinic'
+  defaultFloors: integer("default_floors").notNull().default(1),
+  referenceGfaM2: real("reference_gfa_m2").notNull().default(0), // a sensible starting GFA to hint in the UI, not enforced
+  notes: text("notes"),
+});
+
+export const buildingTemplateDivisions = sqliteTable("building_template_divisions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  templateId: integer("template_id")
+    .notNull()
+    .references(() => buildingTemplates.id, { onDelete: "cascade" }),
+  divisionCode: text("division_code").notNull(), // UniFormat level-1: 'A'..'G'
+  divisionName: text("division_name").notNull(), // 'Shell', 'Services', ...
+  baseRateUsdPerM2: real("base_rate_usd_per_m2").notNull().default(0),
+  sortOrder: integer("sort_order").notNull().default(0),
 });
 
 // A facility's own recurring/operating cost line items — salaries,

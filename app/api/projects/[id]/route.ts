@@ -70,7 +70,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const body = await req.json();
   const allowed = [
-    "name", "author", "phase", "isIncluded", "aaceClass", "deliveryStrategy",
+    "name", "author", "facilityType", "isIncluded", "aaceClass", "deliveryStrategy",
     "designFeePct", "pmFeePct", "permitFeePct",
     "contingencyPctOverride", "fastTrackPremiumPct", "landMonths", "designMonths",
     "designPermitOverlapPct", "commissionMonths", "startDate",

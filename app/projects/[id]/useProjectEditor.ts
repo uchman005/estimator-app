@@ -1,18 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  computeCost,
-  computeSchedule,
-  computeFacilityOpex,
-  type AssemblyLite,
-  type ProjectItemLite,
-  type ProjectSettings,
-  type Tier,
-} from "@/lib/calc/engine";
-import type { ItemRow, ProjectRow, ReferenceData, HospitalGenInfo, OpexItemRow } from "./components/types";
-
-interface ApiItem extends ItemRow {
-  assembly: AssemblyLite | null;
-}
+import { computeCost, computeSchedule, computeFacilityOpex, type ProjectItemLite, type ProjectSettings } from "@/lib/calc/engine";
+import { useSaveStatus } from "@/lib/useSaveStatus";
+import type { ItemRow, ProjectRow, ReferenceData, BuildingGenInfo, OpexItemRow } from "./components/types";
 
 interface ProgramSummary {
   id: number;
@@ -28,6 +17,7 @@ interface CountrySummary {
 }
 
 export function useProjectEditor(projectId: number) {
+  const { status: saveStatus, track } = useSaveStatus();
   const [ref, setRef] = useState<ReferenceData | null>(null);
   const [project, setProject] = useState<ProjectRow | null>(null);
   const [program, setProgram] = useState<ProgramSummary | null>(null);
@@ -38,24 +28,20 @@ export function useProjectEditor(projectId: number) {
   const [role, setRole] = useState<"owner" | "editor" | "viewer" | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [genInfo, setGenInfo] = useState<HospitalGenInfo | null>(null);
+  const [genInfo, setGenInfo] = useState<BuildingGenInfo | null>(null);
   const [genBusy, setGenBusy] = useState(false);
   const [costIndex, setCostIndex] = useState(1);
 
   const load = useCallback(async () => {
-    // Sequential, not parallel: the reference data (specifically its
-    // assemblies) is scoped to this facility's program's own catalog, and we
-    // don't know which program that is until the project itself loads.
-    const projRes = await fetch(`/api/projects/${projectId}`);
+    const [refRes, projRes] = await Promise.all([fetch("/api/reference"), fetch(`/api/projects/${projectId}`)]);
     if (!projRes.ok) {
       const data = await projRes.json().catch(() => ({}));
       setAccessError(data.error || `Could not load this project (HTTP ${projRes.status}).`);
       setLoading(false);
       return;
     }
-    const projData = await projRes.json();
-    const refRes = await fetch(`/api/reference?programId=${projData.program.id}`);
     const refData: ReferenceData = await refRes.json();
+    const projData = await projRes.json();
     setRef(refData);
     setProject(projData.project);
     setProgram(projData.program);
@@ -64,16 +50,13 @@ export function useProjectEditor(projectId: number) {
     setRole(projData.role);
     setCostIndex(projData.costIndex);
     setItems(
-      (projData.items as ApiItem[]).map((it) => ({
+      (projData.items as ItemRow[]).map((it) => ({
         id: it.id,
-        assemblyId: it.assembly?.id ?? null,
         customLabel: it.customLabel,
         customUnit: it.customUnit,
         customUnifCode: it.customUnifCode,
         quantity: it.quantity,
-        tier: it.tier,
-        variantId: it.variantId,
-        rateOverrideUsd: it.rateOverrideUsd,
+        rateUsd: it.rateUsd,
         isAddon: it.isAddon,
         isIncluded: it.isIncluded,
       }))
@@ -86,39 +69,39 @@ export function useProjectEditor(projectId: number) {
     load();
   }, [load]);
 
-  const assemblyById = useMemo(() => {
-    const m = new Map<number, AssemblyLite>();
-    ref?.assemblies.forEach((a) => m.set(a.id, a));
-    return m;
-  }, [ref]);
-
-  const groupedAssemblies = useMemo(() => {
-    const out: Record<string, AssemblyLite[]> = {};
-    ref?.assemblies.forEach((a) => {
-      const letter = a.classCode[0] || "Z";
-      (out[letter] ??= []).push(a);
-    });
-    return out;
-  }, [ref]);
-
   const aace = useMemo(() => ref?.aaceClasses.find((a) => a.classNumber === project?.aaceClass) ?? null, [ref, project]);
+
+  // Every row the building generator writes shares the same quantity (the
+  // GFA it was generated at — see generateBuildingFromTemplate() in
+  // lib/calc/engine.ts), so the first generated division row's quantity IS
+  // the facility's GFA. Flat/vehicle facilities have no such row → null.
+  const buildingGfaM2 = useMemo(
+    () => items.find((it) => it.customUnifCode && /^[A-G]$/.test(it.customUnifCode))?.quantity ?? null,
+    [items]
+  );
 
   const itemsLite: ProjectItemLite[] = useMemo(
     () =>
       items.map((it) => ({
         id: it.id,
-        assembly: it.assemblyId != null ? assemblyById.get(it.assemblyId) ?? null : null,
         customLabel: it.customLabel,
         customUnit: it.customUnit,
         customUnifCode: it.customUnifCode,
         quantity: it.quantity,
-        tier: it.tier,
-        variantId: it.variantId,
-        rateOverrideUsd: it.rateOverrideUsd,
+        rateUsd: it.rateUsd,
+        // phase/duration params aren't surfaced in the UI (set by the
+        // generator, or defaulted server-side for a manual row) — cost
+        // computation doesn't need them, only computeSchedule() does, and
+        // that's computed server-side in the facility GET response's
+        // `schedule` field, not recomputed client-side from this lite list.
+        phase: "vertical",
+        baseDurationMonths: 1,
+        baseSize: 1,
+        durationExponent: 0.2,
         isAddon: it.isAddon,
         isIncluded: it.isIncluded,
       })),
-    [items, assemblyById]
+    [items]
   );
 
   // Escalation is a shared program assumption, not a local input — see program.escalationPct.
@@ -157,26 +140,25 @@ export function useProjectEditor(projectId: number) {
 
   function patchProject(patch: Partial<ProjectRow>) {
     setProject((p) => (p ? { ...p, ...patch } : p));
-    fetch(`/api/projects/${projectId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+    track(fetch(`/api/projects/${projectId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }));
   }
   function patchItem(id: number, patch: Partial<ItemRow>) {
     setItems((arr) => arr.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-    fetch(`/api/projects/${projectId}/items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+    track(fetch(`/api/projects/${projectId}/items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }));
   }
   async function addItem() {
-    const customAssembly = ref?.assemblies.find((a) => a.name === "Custom / Other");
     const res = await fetch(`/api/projects/${projectId}/items`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assemblyId: customAssembly?.id ?? null, quantity: 1, tier: "standard", isAddon: true, customUnifCode: "Z" }),
+      body: JSON.stringify({ customLabel: "New item", quantity: 1, rateUsd: 0, isAddon: true, customUnifCode: "Z" }),
     });
     const row = await res.json();
     setItems((arr) => [
       ...arr,
       {
-        id: row.id, assemblyId: row.assemblyId, customLabel: row.customLabel, customUnit: row.customUnit,
-        customUnifCode: row.customUnifCode, quantity: row.quantity, tier: row.tier, variantId: row.variantId,
-        rateOverrideUsd: row.rateOverrideUsd, isAddon: row.isAddon, isIncluded: row.isIncluded,
+        id: row.id, customLabel: row.customLabel, customUnit: row.customUnit,
+        customUnifCode: row.customUnifCode, quantity: row.quantity, rateUsd: row.rateUsd,
+        isAddon: row.isAddon, isIncluded: row.isIncluded,
       },
     ]);
   }
@@ -195,23 +177,31 @@ export function useProjectEditor(projectId: number) {
   }
   function patchOpexItem(id: number, patch: Partial<OpexItemRow>) {
     setOpexItems((arr) => arr.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-    fetch(`/api/projects/${projectId}/opex-items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+    track(fetch(`/api/projects/${projectId}/opex-items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }));
   }
   async function deleteOpexItem(id: number) {
     setOpexItems((arr) => arr.filter((it) => it.id !== id));
     await fetch(`/api/projects/${projectId}/opex-items/${id}`, { method: "DELETE" });
   }
 
-  async function runGenerator(input: { beds: number; tier: Tier; floors: number; floorToFloorM: number; windowToWallRatioPct: number }) {
+  async function generateBuilding(input: { templateSlug: string; grossAreaM2: number; markupPct: number }) {
     setGenBusy(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}/generate-hospital`, {
+      const res = await fetch(`/api/projects/${projectId}/generate-building`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
       const data = await res.json();
-      setGenInfo(data.info);
+      if (res.ok) {
+        setGenInfo({
+          templateName: data.template.name,
+          defaultFloors: data.template.defaultFloors,
+          grossAreaM2: data.grossAreaM2,
+          markupPct: data.markupPct,
+          divisionCount: data.divisionCount,
+        });
+      }
       await load();
     } finally {
       setGenBusy(false);
@@ -220,9 +210,9 @@ export function useProjectEditor(projectId: number) {
 
   return {
     ref, project, program, country, fx, items, opexItems, loading, accessError, role, genInfo, genBusy, costIndex,
-    assemblyById, groupedAssemblies, aace,
+    aace, buildingGfaM2, saveStatus,
     settings, cost, schedule, opex, autoOpexEstimate,
-    patchProject, patchItem, addItem, deleteItem, runGenerator,
+    patchProject, patchItem, addItem, deleteItem, generateBuilding,
     addOpexItem, patchOpexItem, deleteOpexItem,
   };
 }

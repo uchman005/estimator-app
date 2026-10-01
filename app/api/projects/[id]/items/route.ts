@@ -16,15 +16,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .insert(projectItems)
     .values({
       projectId,
-      assemblyId: body.assemblyId ?? null,
       classNodeId: body.classNodeId ?? null,
-      customLabel: body.customLabel ?? null,
+      customLabel: body.customLabel ?? "New item",
       customUnit: body.customUnit ?? null,
       customUnifCode: body.customUnifCode ?? "Z",
       quantity: body.quantity ?? 1,
-      tier: body.tier ?? "standard",
-      variantId: body.variantId ?? null,
-      isAddon: body.isAddon ?? false,
+      rateUsd: body.rateUsd ?? 0,
+      isAddon: body.isAddon ?? true,
       isIncluded: body.isIncluded ?? true,
       genTag: body.genTag ?? null,
     })

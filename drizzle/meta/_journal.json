@@ -43,6 +43,41 @@
       "when": 1790124776147,
       "tag": "0005_facility_toggle_and_opex_items",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790789240677,
+      "tag": "0006_add_building_templates",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790789323877,
+      "tag": "0007_flatten_project_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790789436304,
+      "tag": "0008_remove_composite_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790806655933,
+      "tag": "0009_add_facility_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790806708635,
+      "tag": "0010_drop_phase",
+      "breakpoints": true
     }
   ]
 }

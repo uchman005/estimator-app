@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { computeProgramCapex, computeFeasibility } from "@/lib/calc/engine";
-import type { ProgramRow, FacilityRow, ReferenceData, CollaboratorRow, Phase } from "./components/types";
+import { useSaveStatus } from "@/lib/useSaveStatus";
+import type { AddFacilityInput } from "@/components/ui/AddFacilityForm";
+import type { ProgramRow, FacilityRow, ReferenceData, CollaboratorRow } from "./components/types";
 
 export function useProgramEditor(programId: number) {
   const router = useRouter();
+  const { status: saveStatus, track } = useSaveStatus();
   const [ref, setRef] = useState<ReferenceData | null>(null);
   const [program, setProgram] = useState<ProgramRow | null>(null);
   const [facilities, setFacilities] = useState<FacilityRow[]>([]);
@@ -18,7 +21,7 @@ export function useProgramEditor(programId: number) {
 
   const load = useCallback(async () => {
     const [refRes, progRes] = await Promise.all([
-      fetch(`/api/reference?programId=${programId}`),
+      fetch(`/api/reference`),
       fetch(`/api/programs/${programId}`),
     ]);
     if (!progRes.ok) {
@@ -91,27 +94,33 @@ export function useProgramEditor(programId: number) {
 
   function patchProgram(patch: Partial<ProgramRow>) {
     setProgram((p) => (p ? { ...p, ...patch } : p));
-    fetch(`/api/programs/${programId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+    track(fetch(`/api/programs/${programId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }));
   }
 
-  async function addFacility(name: string, phase: Phase) {
+  async function addFacility(input: AddFacilityInput) {
     const res = await fetch(`/api/programs/${programId}/facilities`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, phase }),
+      body: JSON.stringify({
+        name: input.name,
+        facilityType: input.facilityType,
+        templateSlug: input.building?.templateSlug,
+        grossAreaM2: input.building?.grossAreaM2,
+        markupPct: input.building?.markupPct,
+      }),
     });
     const row = await res.json();
     router.push(`/projects/${row.id}`);
   }
 
-  function changeFacilityPhase(projectId: number, phase: Phase) {
-    setFacilities((arr) => arr.map((f) => (f.project.id === projectId ? { ...f, project: { ...f.project, phase } } : f)));
-    fetch(`/api/projects/${projectId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phase }) });
+  function changeFacilityType(projectId: number, facilityType: string) {
+    setFacilities((arr) => arr.map((f) => (f.project.id === projectId ? { ...f, project: { ...f.project, facilityType } } : f)));
+    track(fetch(`/api/projects/${projectId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ facilityType }) }));
   }
 
   function toggleFacilityIncluded(projectId: number, isIncluded: boolean) {
     setFacilities((arr) => arr.map((f) => (f.project.id === projectId ? { ...f, project: { ...f.project, isIncluded } } : f)));
-    fetch(`/api/projects/${projectId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isIncluded }) });
+    track(fetch(`/api/projects/${projectId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isIncluded }) }));
   }
 
   async function deleteFacility(projectId: number) {
@@ -146,11 +155,13 @@ export function useProgramEditor(programId: number) {
   }
   async function changeCollaboratorRole(collabId: number, collabRole: "viewer" | "editor") {
     setCollaborators((arr) => arr.map((c) => (c.id === collabId ? { ...c, role: collabRole } : c)));
-    await fetch(`/api/programs/${programId}/collaborators/${collabId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role: collabRole }),
-    });
+    await track(
+      fetch(`/api/programs/${programId}/collaborators/${collabId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: collabRole }),
+      })
+    );
   }
   async function removeCollaborator(collabId: number) {
     setCollaborators((arr) => arr.filter((c) => c.id !== collabId));
@@ -159,9 +170,9 @@ export function useProgramEditor(programId: number) {
 
   return {
     ref, program, facilities, capex, autoOpex, bandLow, bandHigh, totalMonths, feasibility,
-    loading, accessError, role, fxStatus, fxBusy, collaborators,
+    loading, accessError, role, fxStatus, fxBusy, collaborators, saveStatus,
     country, region, costIndex,
-    patchProgram, addFacility, changeFacilityPhase, toggleFacilityIncluded, deleteFacility, refreshFx,
+    patchProgram, addFacility, changeFacilityType, toggleFacilityIncluded, deleteFacility, refreshFx,
     inviteCollaborator, changeCollaboratorRole, removeCollaborator,
   };
 }

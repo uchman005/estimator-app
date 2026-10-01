@@ -42,8 +42,22 @@ export function ScheduleBar({ label, months, totalMonths, color }: { label: stri
   );
 }
 
+// The one place any non-currency number gets formatted — a whole number
+// shows no decimals ("8", not "8.00"), anything else is fixed to exactly 2
+// decimal places ("8.333..." becomes "8.33", "29.7" becomes "29.70"),
+// rather than every call site picking its own precision (or none, risking
+// raw floating-point noise like 29.700000000000003 reaching the screen).
+export function fmtNum(n: number): string {
+  const rounded = Math.round(n * 100) / 100;
+  return Number.isInteger(rounded)
+    ? rounded.toLocaleString("en-US")
+    : rounded.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+export function fmtPct(n: number): string {
+  return `${fmtNum(n)}%`;
+}
 export function fmtMonths(n: number): string {
-  return `${Math.round(n * 10) / 10} mo`;
+  return `${fmtNum(n)} mo`;
 }
 export function fmtUsd(n: number): string {
   const neg = n < 0;

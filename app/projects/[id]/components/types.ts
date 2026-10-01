@@ -1,4 +1,4 @@
-import type { AssemblyLite, AaceClass, Tier } from "@/lib/calc/engine";
+import type { AaceClass } from "@/lib/calc/engine";
 
 export interface RegionRow {
   id: number;
@@ -18,11 +18,25 @@ export interface CountryRow {
   fxSource: string | null;
 }
 
+export interface BuildingTemplateDivisionRow {
+  divisionCode: string;
+  divisionName: string;
+  baseRateUsdPerM2: number;
+}
+
+export interface BuildingTemplateRow {
+  slug: string;
+  name: string;
+  defaultFloors: number;
+  referenceGfaM2: number;
+  divisions: BuildingTemplateDivisionRow[];
+}
+
 export interface ReferenceData {
   countries: CountryRow[];
   currencies: { code: string; symbol: string }[];
   aaceClasses: AaceClass[];
-  assemblies: AssemblyLite[];
+  buildingTemplates: BuildingTemplateRow[];
 }
 
 // A facility — one building inside a Program. Location, funding and
@@ -30,7 +44,7 @@ export interface ReferenceData {
 export interface ProjectRow {
   id: number;
   programId: number;
-  phase: "phase_1" | "phase_2" | "phase_3";
+  facilityType: string;
   name: string;
   author: string | null;
   isIncluded: boolean;
@@ -48,16 +62,26 @@ export interface ProjectRow {
   startDate: string | null;
 }
 
+// UniFormat II level-1 divisions — a generated building row is tagged with
+// one of A-G; a flat-priced item (vehicle, equipment) typically uses 'Z'.
+export const UNIFORMAT_DIVISIONS: { code: string; name: string }[] = [
+  { code: "A", name: "Substructure" },
+  { code: "B", name: "Shell" },
+  { code: "C", name: "Interiors" },
+  { code: "D", name: "Services" },
+  { code: "E", name: "Equipment & Furnishings" },
+  { code: "F", name: "Special Construction" },
+  { code: "G", name: "Building Sitework" },
+  { code: "Z", name: "Other / Equipment / Vehicles" },
+];
+
 export interface ItemRow {
   id: number;
-  assemblyId: number | null;
   customLabel: string | null;
   customUnit: string | null;
   customUnifCode: string | null;
   quantity: number;
-  tier: Tier | null;
-  variantId: number | null;
-  rateOverrideUsd: number | null;
+  rateUsd: number;
   isAddon: boolean;
   isIncluded: boolean;
 }
@@ -81,15 +105,10 @@ export interface OpexItemRow {
   notes: string | null;
 }
 
-export interface HospitalGenInfo {
-  totalGFA: number;
-  footprint: number;
-  wallAreaM2: number;
-  windowAreaM2: number;
-  doorCount: number;
-  orCount: number;
-  orMinAreaM2: number;
-  elevators: number;
-  stairs: number;
-  deptSplitM2: { label: string; areaM2: number }[];
+export interface BuildingGenInfo {
+  templateName: string;
+  defaultFloors: number;
+  grossAreaM2: number;
+  markupPct: number;
+  divisionCount: number;
 }

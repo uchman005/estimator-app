@@ -1,7 +1,7 @@
 import { Field, Select } from "@/components/ui/Form";
 import { Button } from "@/components/ui/Button";
 import { Panel } from "@/components/ui/Panel";
-import { fmtRelativeTime } from "@/components/ui/Metrics";
+import { fmtRelativeTime, fmtNum } from "@/components/ui/Metrics";
 import { isLiveFxRate } from "@/lib/fx";
 import type { CountryRow, ProgramRow } from "./types";
 
@@ -53,7 +53,7 @@ export function CountryRegionPanel({
             {country?.regions.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name} ({r.offsetPct >= 0 ? "+" : ""}
-                {r.offsetPct}%)
+                {fmtNum(r.offsetPct)}%)
               </option>
             ))}
           </Select>
@@ -62,10 +62,10 @@ export function CountryRegionPanel({
 
       <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted">
         <span>
-          Effective index: <b className="font-mono text-ink">{costIndex.toFixed(3)}</b>
+          Effective index: <b className="font-mono text-ink">{fmtNum(costIndex)}</b>
         </span>
         <span>
-          FX: <b className="font-mono text-ink">{fx.toFixed(2)}</b> / USD
+          FX: <b className="font-mono text-ink">{fmtNum(fx)}</b> / USD
         </span>
         <span
           className={`rounded-sm border px-1.5 py-0.5 text-[10px] ${

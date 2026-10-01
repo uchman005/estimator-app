@@ -12,14 +12,6 @@ const NAV: NavItem[] = [
   { href: "/facilities", label: "Facilities", icon: FacilitiesIcon, exact: true },
 ];
 
-// The rate book is three separate concerns, one page each. /catalog is a prefix of the other two,
-// so every entry here matches its own path exactly.
-const RATE_BOOK_NAV: NavItem[] = [
-  { href: "/catalog", label: "Main Items", icon: MainItemIcon, exact: true },
-  { href: "/catalog/sub-items", label: "Sub-Items", icon: SubItemIcon, exact: true },
-  { href: "/catalog/micro-items", label: "Micro-Items", icon: MicroItemIcon, exact: true },
-];
-
 const COLLAPSE_KEY = "sidebar-collapsed";
 
 export function AppShell({ email, children }: { email: string; children: React.ReactNode }) {
@@ -67,15 +59,6 @@ export function AppShell({ email, children }: { email: string; children: React.R
 
         <nav className="flex flex-1 flex-col gap-1">
           {NAV.map((item) => (
-            <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />
-          ))}
-
-          {collapsed ? (
-            <div className="mx-2 my-2 border-t border-white/10" />
-          ) : (
-            <div className="mb-0.5 mt-4 px-2.5 text-[10px] font-semibold tracking-wider text-white/40">RATE BOOK</div>
-          )}
-          {RATE_BOOK_NAV.map((item) => (
             <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} />
           ))}
         </nav>
@@ -147,31 +130,6 @@ function FacilitiesIcon() {
       <path d="M3 21h18" />
       <path d="M5 21V7l7-4 7 4v14" />
       <path d="M9 9h1M14 9h1M9 13h1M14 13h1M10 21v-4h4v4" />
-    </svg>
-  );
-}
-function MainItemIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-      <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
-    </svg>
-  );
-}
-function SubItemIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-      <path d="M12 2l9 5-9 5-9-5 9-5z" />
-      <path d="M3 12l9 5 9-5" />
-      <path d="M3 17l9 5 9-5" />
-    </svg>
-  );
-}
-function MicroItemIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-      <path d="M21 8l-9-5-9 5v8l9 5 9-5V8z" />
-      <path d="M3.3 7.5L12 12.5l8.7-5M12 22V12.5" />
     </svg>
   );
 }

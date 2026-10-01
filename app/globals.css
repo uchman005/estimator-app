@@ -86,3 +86,15 @@ body {
 
 /* subtle scrollbar theming so dark mode doesn't show a jarring light scrollbar */
 * { scrollbar-color: var(--color-border) transparent; }
+
+/* Hide the native up/down spinner on every number input app-wide — applied
+   once here rather than per call site, since every numeric field in the app
+   goes through the same <Input type="number"> (components/ui/Form.tsx). */
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

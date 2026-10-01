@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useProjectEditor } from "./useProjectEditor";
 import { AppShell } from "@/components/AppShell";
+import { fmtNum } from "@/components/ui/Metrics";
+import { SaveStatusBadge } from "@/components/ui/SaveStatusBadge";
 import { AaceClassPanel } from "./components/AaceClassPanel";
-import { HospitalGeneratorPanel } from "./components/HospitalGeneratorPanel";
+import { BuildingTemplatePanel } from "./components/BuildingTemplatePanel";
+import { BuildingCostBreakdownPanel } from "./components/BuildingCostBreakdownPanel";
 import { BoqPanel } from "./components/BoqPanel";
 import { SoftCostsPanel } from "./components/SoftCostsPanel";
 import { ScheduleAssumptionsPanel } from "./components/ScheduleAssumptionsPanel";
@@ -56,11 +59,12 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
               onChange={(e) => s.patchProject({ name: e.target.value })}
             />
             <p className="mt-1 max-w-xl text-xs text-muted">
-              UniFormat II classified · facility #{s.project.id} · {s.country.name}, cost index {s.costIndex.toFixed(3)} (set on
+              UniFormat II classified · facility #{s.project.id} · {s.country.name}, cost index {fmtNum(s.costIndex)} (set on
               the program)
               {s.role && s.role !== "owner" && (
                 <span className="ml-2 rounded-md border border-border px-1.5 py-0.5 text-[10px] uppercase">{s.role}</span>
               )}
+              <SaveStatusBadge status={s.saveStatus} className="ml-2" />
             </p>
           </div>
         </header>
@@ -85,12 +89,10 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
               onSelect={(aaceClass, contingencyPct) => s.patchProject({ aaceClass, contingencyPctOverride: contingencyPct })}
             />
 
-            <HospitalGeneratorPanel onGenerate={s.runGenerator} info={s.genInfo} busy={s.genBusy} />
+            <BuildingTemplatePanel templates={s.ref.buildingTemplates} onGenerate={s.generateBuilding} info={s.genInfo} busy={s.genBusy} />
 
             <BoqPanel
               items={s.items}
-              assemblyById={s.assemblyById}
-              groupedAssemblies={s.groupedAssemblies}
               costIndex={s.costIndex}
               coreSubtotal={s.cost.coreConstruction}
               addonSubtotal={s.cost.addonConstruction}
@@ -113,6 +115,14 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
           </fieldset>
 
           <div className="space-y-5 lg:sticky lg:top-5">
+            <BuildingCostBreakdownPanel
+              items={s.items}
+              cost={s.cost}
+              costIndex={s.costIndex}
+              designFeePct={s.project.designFeePct}
+              pmFeePct={s.project.pmFeePct}
+              permitFeePct={s.project.permitFeePct}
+            />
             <SummaryPanel
               cost={s.cost}
               opex={s.opex}
@@ -120,6 +130,7 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
               currencyCode={s.country.currencyCode}
               currencySymbol={currencySymbol}
               fx={s.fx}
+              buildingGfaM2={s.buildingGfaM2}
             />
             <SchedulePanel schedule={s.schedule} />
           </div>

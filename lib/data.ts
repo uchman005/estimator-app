@@ -1,16 +1,8 @@
 import { db } from "@/db";
-import { eq, inArray } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import {
-  assemblies,
-  assemblyTierRates,
-  assemblyVariants,
-  macroItems,
-  macroItemSubItems,
-  subItems,
-  subItemMicroItems,
-  microItems,
-  microItemRates,
-  classNodes,
+  buildingTemplates,
+  buildingTemplateDivisions,
   countries,
   regions,
   currencies,
@@ -21,152 +13,67 @@ import {
   projectItems,
   projectOpexItems,
 } from "@/db/schema";
-import type { AssemblyLite, ProjectItemLite, OpexItemLite, Tier, MacroItemLite, SubItemLite, MicroItemLite } from "@/lib/calc/engine";
+import { generateBuildingFromTemplate, type ProjectItemLite, type OpexItemLite, type BuildingTemplateLite, type Phase } from "@/lib/calc/engine";
 
-/** The full reusable library for ONE program — every sub-item and micro-item
- * that program's catalog owns, fully assembled with their own
- * components/rates, independent of which (if any) macro-item currently
- * assembles them in. Used both to build AssemblyLite.macroItems and to power
- * the standalone Sub-Items/Micro-Items Library management panels, which need
- * to browse and edit these without going through any one assembly. */
-export async function getComponentLibrary(programId: number) {
-  const microItemRows = await db.select().from(microItems).where(eq(microItems.programId, programId));
-  const microItemIds = microItemRows.map((m) => m.id);
-  const microRateRows = microItemIds.length
-    ? await db.select().from(microItemRates).where(inArray(microItemRates.microItemId, microItemIds))
-    : [];
+const BUILDING_GEN_TAG = "building-template";
 
-  const microItemsById = new Map<number, MicroItemLite>();
-  for (const m of microItemRows) {
-    const rates: Partial<Record<Tier, number>> = {};
-    microRateRows
-      .filter((mr) => mr.microItemId === m.id)
-      .forEach((mr) => {
-        rates[mr.tier as Tier] = mr.unitRateUsd;
-      });
-    microItemsById.set(m.id, { id: m.id, name: m.name, unit: m.unit, rates });
-  }
-
-  const subItemRows = await db.select().from(subItems).where(eq(subItems.programId, programId));
-  const subItemIds = subItemRows.map((s) => s.id);
-  const subMicroJoinRows = subItemIds.length
-    ? await db.select().from(subItemMicroItems).where(inArray(subItemMicroItems.subItemId, subItemIds))
-    : [];
-
-  const subItemsById = new Map<number, SubItemLite>();
-  for (const s of subItemRows) {
-    const components = subMicroJoinRows
-      .filter((j) => j.subItemId === s.id)
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((j) => {
-        const microItem = microItemsById.get(j.microItemId);
-        return microItem ? { joinId: j.id, quantity: j.quantity, microItem } : null;
-      })
-      .filter((c): c is NonNullable<typeof c> => c !== null);
-    subItemsById.set(s.id, {
-      id: s.id,
-      name: s.name,
-      components,
-      labour: { basic: s.labourBasic, standard: s.labourStandard, premium: s.labourPremium },
+/** Generates one BOQ row per UniFormat division from a template + GFA,
+ * replacing any prior generated rows for this facility first. The one place
+ * this insert happens — shared by the facility-creation flow (a new
+ * building-type facility gets its BOQ populated immediately, not left
+ * empty) and the standalone "regenerate" button on a facility's own page.
+ * `markupPct` (default 10) is the flat buffer baked into every row's rate —
+ * see generateBuildingFromTemplate(). */
+export async function insertBuildingFromTemplate(projectId: number, template: BuildingTemplateLite, grossAreaM2: number, markupPct = 10) {
+  const lines = generateBuildingFromTemplate(template, grossAreaM2, markupPct);
+  await db.delete(projectItems).where(and(eq(projectItems.projectId, projectId), eq(projectItems.genTag, BUILDING_GEN_TAG)));
+  for (const line of lines) {
+    await db.insert(projectItems).values({
+      projectId,
+      customLabel: `${line.divisionCode} — ${line.divisionName}`,
+      customUnit: "m²",
+      customUnifCode: line.divisionCode,
+      quantity: line.quantity,
+      rateUsd: line.rateUsd,
+      phase: line.phase,
+      baseDurationMonths: line.baseDurationMonths,
+      baseSize: line.baseSize,
+      durationExponent: line.durationExponent,
+      isAddon: false,
+      isIncluded: true,
+      genTag: BUILDING_GEN_TAG,
     });
   }
-
-  return { microItemsById, subItemsById, microItemRows, subItemRows };
+  return lines.length;
 }
 
-export async function getAllAssembliesLite(programId: number): Promise<AssemblyLite[]> {
-  const rows = await db
-    .select({
-      id: assemblies.id,
-      name: assemblies.name,
-      unit: assemblies.unit,
-      pricingMode: assemblies.pricingMode,
-      hasVariants: assemblies.hasVariants,
-      baseDurationMonths: assemblies.baseDurationMonths,
-      baseSize: assemblies.baseSize,
-      durationExponent: assemblies.durationExponent,
-      phase: assemblies.phase,
-      isCustom: assemblies.isCustom,
-      classCode: classNodes.code,
-      className: classNodes.name,
-    })
-    .from(assemblies)
-    .leftJoin(classNodes, eq(assemblies.classNodeId, classNodes.id))
-    .where(eq(assemblies.programId, programId));
-
-  const ids = rows.map((r) => r.id);
-  const tierRows = ids.length
-    ? await db.select().from(assemblyTierRates).where(inArray(assemblyTierRates.assemblyId, ids))
-    : [];
-  const variantRows = ids.length
-    ? await db.select().from(assemblyVariants).where(inArray(assemblyVariants.assemblyId, ids))
-    : [];
-  const macroItemRows = ids.length ? await db.select().from(macroItems).where(inArray(macroItems.assemblyId, ids)) : [];
-  const macroItemIds = macroItemRows.map((s) => s.id);
-  const macroSubJoinRows = macroItemIds.length
-    ? await db.select().from(macroItemSubItems).where(inArray(macroItemSubItems.macroItemId, macroItemIds))
-    : [];
-
-  const { subItemsById } = await getComponentLibrary(programId);
-
-  return rows.map((r) => {
-    const tierRates: Partial<Record<Tier, number>> = {};
-    tierRows
-      .filter((t) => t.assemblyId === r.id)
-      .forEach((t) => {
-        tierRates[t.tier as Tier] = t.unitRateUsd;
-      });
-    const variants = variantRows
-      .filter((v) => v.assemblyId === r.id)
-      .map((v) => ({ id: v.id, label: v.label, unitRateUsd: v.unitRateUsd, laborPct: v.laborPct, materialPct: v.materialPct }));
-
-    const macroItemsForAssembly: MacroItemLite[] = macroItemRows
-      .filter((ma) => ma.assemblyId === r.id)
+/** Every seeded building template, each with its own UniFormat A-G division
+ * rates nested — the picker in BuildingTemplatePanel.tsx and the generator
+ * route both read this. Global reference data (like countries/aaceClasses),
+ * not program-scoped — see the comment on buildingTemplates in db/schema.ts. */
+export async function getBuildingTemplates(): Promise<BuildingTemplateLite[]> {
+  const templateRows = await db.select().from(buildingTemplates);
+  const divisionRows = await db.select().from(buildingTemplateDivisions);
+  return templateRows.map((t) => ({
+    slug: t.slug,
+    name: t.name,
+    defaultFloors: t.defaultFloors,
+    referenceGfaM2: t.referenceGfaM2,
+    divisions: divisionRows
+      .filter((d) => d.templateId === t.id)
       .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((ma) => {
-        const components = macroSubJoinRows
-          .filter((j) => j.macroItemId === ma.id)
-          .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map((j) => {
-            const subItem = subItemsById.get(j.subItemId);
-            return subItem ? { joinId: j.id, quantity: j.quantity, subItem } : null;
-          })
-          .filter((c): c is NonNullable<typeof c> => c !== null);
-        return {
-          id: ma.id,
-          name: ma.name,
-          components,
-          labour: { basic: ma.labourBasic, standard: ma.labourStandard, premium: ma.labourPremium },
-        };
-      });
-
-    return {
-      id: r.id,
-      name: r.name,
-      unit: r.unit,
-      pricingMode: r.pricingMode as AssemblyLite["pricingMode"],
-      hasVariants: !!r.hasVariants,
-      baseDurationMonths: r.baseDurationMonths,
-      baseSize: r.baseSize,
-      durationExponent: r.durationExponent,
-      phase: r.phase as AssemblyLite["phase"],
-      classCode: r.classCode ?? "Z",
-      className: r.className ?? "Unclassified",
-      tierRates,
-      variants,
-      macroItems: macroItemsForAssembly,
-    };
-  });
+      .map((d) => ({ divisionCode: d.divisionCode, divisionName: d.divisionName, baseRateUsdPerM2: d.baseRateUsdPerM2 })),
+  }));
 }
 
-export async function getReferenceData(programId: number) {
-  const [countryRows, regionRows, currencyRows, fxRows, aaceRows, assemblyList] = await Promise.all([
+export async function getReferenceData() {
+  const [countryRows, regionRows, currencyRows, fxRows, aaceRows, templates] = await Promise.all([
     db.select().from(countries),
     db.select().from(regions),
     db.select().from(currencies),
     db.select().from(fxRates),
     db.select().from(aaceClasses),
-    getAllAssembliesLite(programId),
+    getBuildingTemplates(),
   ]);
 
   // latest FX per currency
@@ -191,16 +98,8 @@ export async function getReferenceData(programId: number) {
     countries: countriesFull,
     currencies: currencyRows,
     aaceClasses: aaceRows.sort((a, b) => b.classNumber - a.classNumber),
-    assemblies: assemblyList,
+    buildingTemplates: templates,
   };
-}
-
-/** The one seeded "Default Starter Catalog" program (see db/seed.ts,
- * lib/catalogClone.ts) — every new program's catalog is cloned from it, and
- * anyone can import from it regardless of ownership. */
-export async function getTemplateProgramId(): Promise<number | null> {
-  const [row] = await db.select({ id: programs.id }).from(programs).where(eq(programs.isTemplate, true));
-  return row?.id ?? null;
 }
 
 /** Country/region/currency/FX for a given location — shared by a single
@@ -227,17 +126,18 @@ function toOpexItemsLite(items: (typeof projectOpexItems.$inferSelect)[]): OpexI
   return items.map((it) => ({ annualAmountUsd: it.annualAmountUsd, isIncluded: it.isIncluded }));
 }
 
-function toItemsLite(items: (typeof projectItems.$inferSelect)[], assemblyById: Map<number, AssemblyLite>): (ProjectItemLite & { id: number })[] {
+function toItemsLite(items: (typeof projectItems.$inferSelect)[]): (ProjectItemLite & { id: number })[] {
   return items.map((it) => ({
     id: it.id,
-    assembly: it.assemblyId != null ? assemblyById.get(it.assemblyId) ?? null : null,
     customLabel: it.customLabel,
     customUnit: it.customUnit,
     customUnifCode: it.customUnifCode,
     quantity: it.quantity,
-    tier: it.tier as Tier | null,
-    variantId: it.variantId,
-    rateOverrideUsd: it.rateOverrideUsd,
+    rateUsd: it.rateUsd,
+    phase: it.phase as Phase,
+    baseDurationMonths: it.baseDurationMonths,
+    baseSize: it.baseSize,
+    durationExponent: it.durationExponent,
     isAddon: it.isAddon,
     isIncluded: it.isIncluded,
   }));
@@ -252,9 +152,7 @@ export async function getProjectFull(projectId: number) {
   if (!program) return null;
 
   const items = await db.select().from(projectItems).where(eq(projectItems.projectId, projectId));
-  const assemblyList = await getAllAssembliesLite(project.programId);
-  const assemblyById = new Map(assemblyList.map((a) => [a.id, a]));
-  const itemsLite = toItemsLite(items, assemblyById);
+  const itemsLite = toItemsLite(items);
   const opexItems = await db.select().from(projectOpexItems).where(eq(projectOpexItems.projectId, projectId));
 
   const location = await resolveLocation(program.countryId, program.regionId);
@@ -287,17 +185,12 @@ export async function getProgramFull(programId: number) {
   const allOpexItems = facilityIds.length
     ? await db.select().from(projectOpexItems).where(inArray(projectOpexItems.projectId, facilityIds))
     : [];
-  const assemblyList = await getAllAssembliesLite(programId);
-  const assemblyById = new Map(assemblyList.map((a) => [a.id, a]));
   const aaceRows = await db.select().from(aaceClasses);
   const aaceByNumber = new Map(aaceRows.map((a) => [a.classNumber, a]));
 
   const facilities = facilityRows.map((project) => ({
     project,
-    items: toItemsLite(
-      allItems.filter((it) => it.projectId === project.id),
-      assemblyById
-    ),
+    items: toItemsLite(allItems.filter((it) => it.projectId === project.id)),
     opexItems: toOpexItemsLite(allOpexItems.filter((it) => it.projectId === project.id)),
     aace: aaceByNumber.get(project.aaceClass),
   }));

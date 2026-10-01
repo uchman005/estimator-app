@@ -13,8 +13,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const body = await req.json();
   const allowed = [
-    "assemblyId", "classNodeId", "customLabel", "customUnit", "customUnifCode",
-    "quantity", "tier", "variantId", "rateOverrideUsd", "isAddon", "isIncluded", "notes",
+    "classNodeId", "customLabel", "customUnit", "customUnifCode",
+    "quantity", "rateUsd", "phase", "baseDurationMonths", "baseSize", "durationExponent",
+    "isAddon", "isIncluded", "notes",
   ];
   const patch: Record<string, unknown> = {};
   for (const key of allowed) if (key in body) patch[key] = body[key];

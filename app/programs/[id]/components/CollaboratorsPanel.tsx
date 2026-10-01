@@ -34,7 +34,7 @@ export function CollaboratorsPanel({
   }
 
   return (
-    <Panel title="08 — SHARING & COLLABORATORS" eyebrow="owner only">
+    <Panel title="04 — SHARING & COLLABORATORS" eyebrow="owner only">
       <p className="mb-2 text-[11.5px] text-muted">
         A grant here covers every facility in this program. Editors can change everything an owner can except delete the
         program or manage who has access. Viewers can see the full estimate but can&apos;t change anything. Inviting an

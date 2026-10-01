@@ -9,6 +9,7 @@ import { FundingPanel } from "./components/FundingPanel";
 import { CollaboratorsPanel } from "./components/CollaboratorsPanel";
 import { ProgramSummaryPanel } from "./components/ProgramSummaryPanel";
 import { FeasibilityPanel } from "./components/FeasibilityPanel";
+import { SaveStatusBadge } from "@/components/ui/SaveStatusBadge";
 
 export default function ProgramEditor({ programId, currentUserEmail }: { programId: number; currentUserEmail: string }) {
   const s = useProgramEditor(programId);
@@ -56,6 +57,7 @@ export default function ProgramEditor({ programId, currentUserEmail }: { program
               {s.role && s.role !== "owner" && (
                 <span className="ml-2 rounded-md border border-border px-1.5 py-0.5 text-[10px] uppercase">{s.role}</span>
               )}
+              <SaveStatusBadge status={s.saveStatus} className="ml-2" />
             </p>
           </div>
           <Link href="/" className="whitespace-nowrap text-xs text-blueprint underline">
@@ -87,9 +89,10 @@ export default function ProgramEditor({ programId, currentUserEmail }: { program
 
             <FacilitiesPanel
               facilities={s.facilities}
+              buildingTemplates={s.ref.buildingTemplates}
               canDelete={isOwner}
               onAdd={s.addFacility}
-              onChangePhase={s.changeFacilityPhase}
+              onChangeType={s.changeFacilityType}
               onToggleIncluded={s.toggleFacilityIncluded}
               onDelete={s.deleteFacility}
             />

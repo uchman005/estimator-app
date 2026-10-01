@@ -4,70 +4,27 @@
 // department-rate double-counting bug get caught and fixed in one place
 // during prototyping — the same fix now applies everywhere this is used.
 
-export type Tier = "basic" | "standard" | "premium";
 export type Phase = "site" | "vertical" | "procurement";
 export type Strategy = "phased" | "parallel";
-export type PricingMode = "tier" | "variant" | "composite";
 
-export interface MicroItemLite {
+// A facility's BOQ line item — a flat quantity × rate. There's no catalog
+// to defer to: rateUsd is the only rate a row has, set either by the
+// building-template generator (see generateBuildingFromTemplate() below) or
+// typed directly for a flat-priced item ("Ambulance", $85,000). phase/
+// baseDurationMonths/baseSize/durationExponent feed rowDurationMonths()
+// below — every row carries its own, since there's no shared assembly to
+// read them from.
+export interface ProjectItemLite {
   id: number;
-  name: string;
-  unit: string;
-  rates: Partial<Record<Tier, number>>;
-}
-/** A join row: this micro-item, assembled into a sub-item at this quantity. */
-export interface SubItemComponentLite {
-  joinId: number; // id of the sub_item_micro_items row — needed to edit/delete just this assembly link
+  customLabel?: string | null;
+  customUnit?: string | null;
+  customUnifCode?: string | null; // UniFormat division code, e.g. 'B' for a generated Shell row
   quantity: number;
-  microItem: MicroItemLite;
-}
-/** A library entry — reusable across any number of macro-items. */
-export interface SubItemLite {
-  id: number;
-  name: string;
-  components: SubItemComponentLite[];
-  labour: Record<Tier, number>; // assembly/fitting labour, additive on top of components
-}
-/** A join row: this sub-item, assembled into a macro-item at this quantity. */
-export interface MacroItemComponentLite {
-  joinId: number; // id of the macro_item_sub_items row
-  quantity: number;
-  subItem: SubItemLite;
-}
-export interface MacroItemLite {
-  id: number;
-  name: string;
-  components: MacroItemComponentLite[];
-  labour: Record<Tier, number>; // coordination/commissioning labour, additive on top of components
-}
-
-export interface AssemblyLite {
-  id: number;
-  name: string;
-  unit: string;
-  pricingMode: PricingMode;
-  hasVariants: boolean;
+  rateUsd: number;
+  phase: Phase;
   baseDurationMonths: number;
   baseSize: number;
   durationExponent: number;
-  phase: Phase;
-  classCode: string;
-  className: string;
-  tierRates?: Partial<Record<Tier, number>>;
-  variants?: { id: number; label: string; unitRateUsd: number; laborPct: number; materialPct: number }[];
-  macroItems?: MacroItemLite[];
-}
-
-export interface ProjectItemLite {
-  id: number;
-  assembly: AssemblyLite | null;
-  customLabel?: string | null;
-  customUnit?: string | null;
-  customUnifCode?: string | null;
-  quantity: number;
-  tier?: Tier | null;
-  variantId?: number | null;
-  rateOverrideUsd?: number | null;
   isAddon: boolean;
   isIncluded: boolean;
 }
@@ -90,8 +47,8 @@ export interface AaceClass {
 export interface ProjectSettings {
   aaceClass: number;
   deliveryStrategy: Strategy;
-  designFeePct: number;
-  pmFeePct: number;
+  designFeePct: number; // "Architect fee" in the UI — see SoftCostsPanel.tsx
+  pmFeePct: number; // "Contractor fee (overhead & profit)" in the UI
   permitFeePct: number;
   escalationPct: number;
   contingencyPctOverride: number | null;
@@ -123,64 +80,12 @@ export interface OpexItemLite {
 }
 
 export function rowUnitRate(item: ProjectItemLite): number {
-  if (item.rateOverrideUsd != null) return item.rateOverrideUsd; // explicit override always wins, even over a composite sum
-  if (!item.assembly) return 0;
-  if (item.assembly.pricingMode === "composite") return compositeAssemblyRate(item.assembly, item.tier ?? "standard");
-  if (item.assembly.hasVariants) {
-    const variant = item.assembly.variants?.find((v) => v.id === item.variantId) ?? item.assembly.variants?.[0];
-    return variant?.unitRateUsd ?? 0;
-  }
-  const tier = item.tier ?? "standard";
-  return item.assembly.tierRates?.[tier] ?? 0;
-}
-
-/** A sub-item's own rate: the sum of quantity × rate across every
- * micro-item it's assembled from, PLUS its own assembly labour (fitting the
- * components together into a working sub-item — additive, not baked into
- * any one micro-item's rate). Exposed on its own since the Sub-Items
- * Library needs "what does this sub-item cost, standalone" independent of
- * any macro-item that happens to use it. */
-export function subItemRate(subItem: SubItemLite, tier: Tier): number {
-  const componentsTotal = subItem.components.reduce((s, c) => s + c.quantity * (c.microItem.rates[tier] ?? 0), 0);
-  return componentsTotal + (subItem.labour[tier] ?? 0);
-}
-
-/** The whole point of the composite model: an assembly (the "Main Item")
- * never has its own rate set directly — it's the sum, three levels down, of
- * every macro-item's assembled sub-items (each at its own join quantity),
- * each sub-item's assembled micro-items (each at ITS own join quantity),
- * times that micro-item's rate, at the given tier — PLUS each macro-item's
- * own coordination labour and each sub-item's own assembly labour, both
- * additive. A join quantity left at the default of 1 (and labour left at 0)
- * makes an assembled item behave as a plain $/unit rate, so both patterns —
- * "$/m² of GFA" and "a literal takeoff of doors and walls, plus the labour
- * to put them together" — can coexist under the same assembly. Because
- * sub-items and micro-items are a shared library, editing one rate, one
- * labour figure, or one join quantity changes every assembly that
- * assembles it in, automatically. */
-export function compositeAssemblyRate(assembly: AssemblyLite, tier: Tier): number {
-  let sum = 0;
-  for (const macro of assembly.macroItems ?? []) {
-    const subItemsTotal = macro.components.reduce((s, comp) => s + comp.quantity * subItemRate(comp.subItem, tier), 0);
-    sum += subItemsTotal + (macro.labour[tier] ?? 0);
-  }
-  return sum;
-}
-
-/** For UI breakdown display: macro-item subtotals (summed across all their
- * assembled sub-items and micro-items, plus the macro-item's own labour) at
- * a given tier. */
-export function compositeBreakdown(assembly: AssemblyLite, tier: Tier): { macroItemId: number; name: string; subtotal: number }[] {
-  return (assembly.macroItems ?? []).map((macro) => {
-    const subItemsTotal = macro.components.reduce((s, c) => s + c.quantity * subItemRate(c.subItem, tier), 0);
-    return { macroItemId: macro.id, name: macro.name, subtotal: subItemsTotal + (macro.labour[tier] ?? 0) };
-  });
+  return item.rateUsd;
 }
 
 export function rowDurationMonths(item: ProjectItemLite): number {
-  if (!item.assembly) return 1;
   const size = Math.max(item.quantity, 0.001);
-  return Math.max(1, item.assembly.baseDurationMonths * Math.pow(size / item.assembly.baseSize, item.assembly.durationExponent));
+  return Math.max(1, item.baseDurationMonths * Math.pow(size / item.baseSize, item.durationExponent));
 }
 
 export interface CostBreakdown {
@@ -210,9 +115,8 @@ export function computeSchedule(items: ProjectItemLite[], settings: ProjectSetti
   const procurement: number[] = [];
   for (const item of included) {
     const dur = rowDurationMonths(item);
-    const phase = item.assembly?.phase ?? "vertical";
-    if (phase === "site") site.push(dur);
-    else if (phase === "procurement") procurement.push(dur);
+    if (item.phase === "site") site.push(dur);
+    else if (item.phase === "procurement") procurement.push(dur);
     else vertical.push(dur);
   }
   const siteDur = site.length ? Math.max(...site) : 2;
@@ -249,6 +153,9 @@ export function computeCost(items: ProjectItemLite[], settings: ProjectSettings,
     else coreConstruction += cost;
   }
   const totalConstruction = coreConstruction + addonConstruction;
+  // designFeePct/pmFeePct/permitFeePct together are the RSMeans-style
+  // "Contractor Fees + Architect Fee" layer on top of the sub-total — see
+  // SoftCostsPanel.tsx for the labels.
   const softCosts = totalConstruction * ((settings.designFeePct + settings.pmFeePct + settings.permitFeePct) / 100);
 
   const schedule = computeSchedule(items, settings);
@@ -273,10 +180,8 @@ export function computeCost(items: ProjectItemLite[], settings: ProjectSettings,
  * facility's construction contingency. Facilities toggled off
  * (isIncluded: false) contribute nothing — filter them out before calling
  * this, same as the caller filters `facilities` for computeProgramOpex()
- * below. This is the ONE place a Program's capex is summed, mirroring how
- * compositeAssemblyRate() is the one place a composite assembly's rate is
- * summed — API routes and any future UI should call this rather than
- * re-deriving the sum. */
+ * below. This is the ONE place a Program's capex is summed — API routes and
+ * any future UI should call this rather than re-deriving the sum. */
 export function computeProgramCapex(facilities: { grandTotal: number }[], landCostUsd: number): number {
   return facilities.reduce((sum, f) => sum + f.grandTotal, 0) + landCostUsd;
 }
@@ -311,8 +216,7 @@ export interface FeasibilityResult {
 /** autoOpex is the program's total recurring cost as computed by
  * computeProgramOpex() (itemized-per-facility, falling back to a %-of-capex
  * estimate) — funding.opexOverrideUsd, when set, is a program-wide manual
- * override that wins over that computed total outright, same "override wins"
- * pattern as an assembly's rateOverrideUsd. */
+ * override that wins over that computed total outright. */
 export function computeFeasibility(grandTotal: number, autoOpex: number, funding: FundingSettings): FeasibilityResult {
   const opex = funding.opexOverrideUsd > 0 ? funding.opexOverrideUsd : autoOpex;
   const operatingBalance = funding.annualRevenueUsd - opex;
@@ -329,115 +233,68 @@ export function computeFeasibility(grandTotal: number, autoOpex: number, funding
 }
 
 /* ---------------------------------------------------------------------- */
-/*  Hospital bed-program generator                                        */
+/*  Modeled square-meter cost estimating — building templates             */
+/*                                                                          */
+/*  Pick a template, type a gross floor area, and get back one BOQ line   */
+/*  per UniFormat division (A-G) at that division's $/m² rate × GFA — the  */
+/*  industry-standard "modeled square foot" method (RSMeans etc.):        */
+/*  division rows with $/m² and % of subtotal, summing to a subtotal that */
+/*  computeCost() above then layers soft costs/escalation/contingency on  */
+/*  top of exactly as it already does for any other row. There is no      */
+/*  assembly/catalog underneath a division rate — see db/schema.ts's      */
+/*  buildingTemplates/buildingTemplateDivisions.                          */
 /* ---------------------------------------------------------------------- */
 
-export interface HospitalGeneratorInput {
-  beds: number;
-  tier: Tier;
-  floors: number;
-  floorToFloorM: number;
-  windowToWallRatio: number; // 0..1
+export interface BuildingTemplateDivisionLite {
+  divisionCode: string; // 'A'..'G'
+  divisionName: string;
+  baseRateUsdPerM2: number;
 }
 
-export interface GeneratedLineSpec {
-  assemblyCode: string; // matches seed's assemblyIdByCode keys — resolved to an id by the caller
-  quantity: number;
-  tier?: Tier;
-  variantIndex?: number; // index into the assembly's variants, resolved by caller
+export interface BuildingTemplateLite {
+  slug: string;
+  name: string;
+  defaultFloors: number;
+  referenceGfaM2: number;
+  divisions: BuildingTemplateDivisionLite[];
 }
 
-export interface HospitalGeneratorResult {
-  lines: GeneratedLineSpec[];
-  info: {
-    totalGFA: number;
-    footprint: number;
-    lengthM: number;
-    widthM: number;
-    wallAreaM2: number;
-    windowAreaM2: number;
-    doorCount: number;
-    orCount: number;
-    orMinAreaM2: number;
-    elevators: number;
-    stairs: number;
-    deptSplitM2: { label: string; areaM2: number }[];
-  };
+export interface GeneratedBuildingLine {
+  divisionCode: string;
+  divisionName: string;
+  quantity: number; // = grossAreaM2, same for every division row
+  rateUsd: number; // = division.baseRateUsdPerM2, scaled by costIndex later like any other row
+  phase: Phase;
+  baseDurationMonths: number;
+  baseSize: number;
+  durationExponent: number;
 }
 
-const DEFAULT_WALL_VARIANT_BY_TIER: Record<Tier, number> = { basic: 0, standard: 1, premium: 3 };
-const DEFAULT_WINDOW_VARIANT_BY_TIER: Record<Tier, number> = { basic: 0, standard: 1, premium: 2 };
-const DEFAULT_DOOR_VARIANT_BY_TIER: Record<Tier, number> = { basic: 0, standard: 1, premium: 2 };
-
-// Departmental split of total GFA — shown for space-programming context
-// (how many m² of nursing vs. surgical vs. admin space this implies) but
-// NOT separately priced: the five composite categories below (Structural,
-// Mechanical, Electrical, Specialized Medical Areas, Finishing) already
-// price the whole GFA inclusive of that mix, per the sourced per-m²
-// breakdown. Pricing this split AND the composite categories would double
-// count the same construction cost from two different angles.
-const HOSPITAL_DEPT_SPLIT = {
-  "Inpatient Nursing Units": 0.42,
-  "Surgical / Operating Theatre Suite": 0.09,
-  "Diagnostic & Treatment": 0.13,
-  "Emergency Department": 0.06,
-  Administration: 0.08,
-  "Support Services": 0.12,
-  "Circulation, Risers & Plant": 0.10,
-};
-
-export const HOSPITAL_GFA_PER_BED: Record<Tier, number> = { basic: 65, standard: 95, premium: 160 };
-
-export function generateHospitalProgram(input: HospitalGeneratorInput): HospitalGeneratorResult {
-  const { beds, tier, floors, floorToFloorM, windowToWallRatio } = input;
-  const totalGFA = beds * HOSPITAL_GFA_PER_BED[tier];
-  const footprint = totalGFA / floors;
-  const widthM = Math.sqrt(footprint / 1.6);
-  const lengthM = footprint / widthM;
-  const perimeter = 2 * (lengthM + widthM);
-  const grossWallArea = perimeter * floorToFloorM * floors;
-  const windowAreaM2 = grossWallArea * windowToWallRatio;
-  const wallAreaM2 = grossWallArea - windowAreaM2;
-  const doorCount = 2 + floors;
-
-  const orCount = Math.ceil(beds / 28);
-  const orMinAreaM2 = orCount * 55.7; // FGI Guidelines minimum clear OR floor area (600 sq ft)
-
-  let elevators: number;
-  if (floors <= 1) elevators = 1;
-  else if (beds <= 60) elevators = 1;
-  else if (beds <= 200) elevators = 2;
-  else if (beds <= 350) elevators = 3;
-  else elevators = 3 + Math.ceil((beds - 350) / 150);
-
-  const stairs = Math.max(2, 2 + Math.floor(Math.max(0, totalGFA - 2500) / 2500));
-
-  const lines: GeneratedLineSpec[] = [
-    // The whole hospital's core construction is ONE "Main Item" row now —
-    // Structural Work, Mechanical Systems, Electrical Systems, Specialized
-    // Medical Areas and Finishing live as macro-items underneath it (each
-    // itself broken into sub-items → micro-items). Its rate is resolved by
-    // rowUnitRate()/compositeAssemblyRate() in the calc engine, not set here.
-    { assemblyCode: "hospital_core", quantity: round(totalGFA), tier },
-    // Envelope stays variant-priced (a real material choice, not a cost split).
-    { assemblyCode: "ext_wall", quantity: round(wallAreaM2), variantIndex: DEFAULT_WALL_VARIANT_BY_TIER[tier] },
-    { assemblyCode: "ext_window", quantity: round(windowAreaM2), variantIndex: DEFAULT_WINDOW_VARIANT_BY_TIER[tier] },
-    { assemblyCode: "ext_door", quantity: doorCount, variantIndex: DEFAULT_DOOR_VARIANT_BY_TIER[tier] },
-    // Vertical transport stays count-based per the US code convention.
-    { assemblyCode: "stairs_core", quantity: stairs, tier },
-    { assemblyCode: "elevator_car", quantity: elevators, tier },
-  ];
-
-  return {
-    lines,
-    info: {
-      totalGFA, footprint, lengthM, widthM, wallAreaM2, windowAreaM2, doorCount,
-      orCount, orMinAreaM2, elevators, stairs,
-      deptSplitM2: Object.entries(HOSPITAL_DEPT_SPLIT).map(([label, pct]) => ({ label, areaM2: totalGFA * pct })),
-    },
-  };
-}
-
-function round(n: number): number {
-  return Math.round(n);
+/** One row per division, each quantity = the whole GFA (so quantity × rate
+ * is that division's own $/m² contribution) — matches the reference
+ * breakdown exactly: sum the rows, and you have the building's sub-total
+ * before soft costs. All divisions of one generated building share the
+ * same schedule profile, sized off the template (more floors → longer
+ * critical path; baseSize keyed to the template's own reference GFA so a
+ * building close to that reference takes about baseDurationMonths).
+ *
+ * `markupPct` (default 10) is baked directly into each row's `rateUsd` —
+ * a flat buffer over the template's placeholder rates, for the real-world
+ * surprises a rough per-m² figure can't see coming. It's just a higher
+ * number on every row, not a separate contingency line — set it to 0 for
+ * the template's rate exactly as seeded. */
+export function generateBuildingFromTemplate(template: BuildingTemplateLite, grossAreaM2: number, markupPct = 10): GeneratedBuildingLine[] {
+  const baseDurationMonths = 4 + template.defaultFloors * 2;
+  const baseSize = Math.max(template.referenceGfaM2, 1);
+  const markupFactor = 1 + markupPct / 100;
+  return template.divisions.map((d) => ({
+    divisionCode: d.divisionCode,
+    divisionName: d.divisionName,
+    quantity: grossAreaM2,
+    rateUsd: d.baseRateUsdPerM2 * markupFactor,
+    phase: "vertical" as Phase,
+    baseDurationMonths,
+    baseSize,
+    durationExponent: 0.4,
+  }));
 }

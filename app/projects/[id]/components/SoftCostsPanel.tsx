@@ -4,10 +4,14 @@ import type { ProjectRow } from "./types";
 
 export function SoftCostsPanel({ project, onChange }: { project: ProjectRow; onChange: (patch: Partial<ProjectRow>) => void }) {
   return (
-    <Panel title="05 — SOFT COSTS & DELIVERY">
+    <Panel title="05 — CONTRACTOR &amp; ARCHITECT FEES, DELIVERY">
+      <p className="mb-2 text-[11.5px] text-muted">
+        The RSMeans-style layer on top of the BOQ sub-total: Architect Fee, Contractor Fee (general requirements,
+        overhead &amp; profit) and Permitting — see the breakdown in the summary panel.
+      </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <NumField label="Design & eng. fees" suffix="%" value={project.designFeePct} onChange={(v) => onChange({ designFeePct: v })} />
-        <NumField label="PM & supervision" suffix="%" value={project.pmFeePct} onChange={(v) => onChange({ pmFeePct: v })} />
+        <NumField label="Architect fee" suffix="%" value={project.designFeePct} onChange={(v) => onChange({ designFeePct: v })} />
+        <NumField label="Contractor fee (overhead & profit)" suffix="%" value={project.pmFeePct} onChange={(v) => onChange({ pmFeePct: v })} />
         <NumField label="Permitting/legal" suffix="%" value={project.permitFeePct} onChange={(v) => onChange({ permitFeePct: v })} />
         <Field label="Delivery strategy">
           <Select

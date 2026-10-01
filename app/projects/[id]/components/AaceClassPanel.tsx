@@ -1,4 +1,5 @@
 import { Panel } from "@/components/ui/Panel";
+import { fmtNum } from "@/components/ui/Metrics";
 import type { AaceClass } from "@/lib/calc/engine";
 
 export function AaceClassPanel({
@@ -25,7 +26,7 @@ export function AaceClassPanel({
             Class {c.classNumber}
             <br />
             <span className="text-[9.5px]">
-              {c.bandLowPct}% / +{c.bandHighPct}%
+              {fmtNum(c.bandLowPct)}% / +{fmtNum(c.bandHighPct)}%
             </span>
           </button>
         ))}

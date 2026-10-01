@@ -1,7 +1,7 @@
 import { Panel } from "@/components/ui/Panel";
 import { Input, Select } from "@/components/ui/Form";
 import { Button } from "@/components/ui/Button";
-import { fmtUsd } from "@/components/ui/Metrics";
+import { fmtUsd, fmtNum } from "@/components/ui/Metrics";
 import { OPEX_CATEGORIES, OPEX_CATEGORY_LABEL, type OpexItemRow, type OpexCategory } from "./types";
 
 export function OperatingCostsPanel({
@@ -26,7 +26,7 @@ export function OperatingCostsPanel({
       <p className="mb-2 text-[11.5px] text-muted">
         Annual running costs for this facility — salaries, maintenance, utilities. These roll up into the program&apos;s
         feasibility alongside every other facility&apos;s. Add none, and the program instead estimates this facility&apos;s
-        opex at <b className="font-mono text-ink">{opexPctOfCapexPerYear}%</b> of its own capital cost (
+        opex at <b className="font-mono text-ink">{fmtNum(opexPctOfCapexPerYear)}%</b> of its own capital cost (
         <b className="font-mono text-ink">{fmtUsd(autoEstimate)}/yr</b> right now) — enter real numbers here whenever you
         have them.
       </p>

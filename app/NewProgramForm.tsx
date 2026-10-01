@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Field, Input, Select } from "@/components/ui/Form";
+import { Field, Input, Select, NumField } from "@/components/ui/Form";
 import { Button } from "@/components/ui/Button";
 
 export default function NewProgramForm({ countries }: { countries: { id: string; name: string }[] }) {
   const router = useRouter();
   const [name, setName] = useState("Regional Hospital System — Worked Example");
   const [countryId, setCountryId] = useState(countries[0]?.id ?? "ng");
+  const [fundedUsd, setFundedUsd] = useState(0);
   const [busy, setBusy] = useState(false);
 
   async function createProgram() {
@@ -17,7 +18,7 @@ export default function NewProgramForm({ countries }: { countries: { id: string;
       const res = await fetch("/api/programs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, countryId }),
+        body: JSON.stringify({ name, countryId, fundedUsd }),
       });
       const row = await res.json();
       router.push(`/programs/${row.id}`);
@@ -40,6 +41,7 @@ export default function NewProgramForm({ countries }: { countries: { id: string;
           ))}
         </Select>
       </Field>
+      <NumField label="Proposed funding (USD)" value={fundedUsd} onChange={setFundedUsd} />
       <Button onClick={createProgram} disabled={busy}>
         {busy ? "Creating…" : "+ New program"}
       </Button>

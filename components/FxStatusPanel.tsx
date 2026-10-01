@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Panel } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
-import { fmtRelativeTime } from "@/components/ui/Metrics";
+import { fmtRelativeTime, fmtNum } from "@/components/ui/Metrics";
 import { isLiveFxRate } from "@/lib/fx";
 
 interface CountryFx {
@@ -65,7 +65,7 @@ export function FxStatusPanel() {
               <div className="font-mono text-[13px] font-semibold">
                 {c.currencyCode} <span className="text-muted">/ USD</span>
               </div>
-              <div className="font-mono text-[15px]">{c.fx.toFixed(2)}</div>
+              <div className="font-mono text-[15px]">{fmtNum(c.fx)}</div>
               <div className={`text-[10px] ${live ? "text-green" : "text-amber"}`}>
                 {live ? `live · ${fmtRelativeTime(c.fxFetchedAt)}` : "never fetched"}
               </div>

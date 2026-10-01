@@ -1,5 +1,5 @@
 import { Panel } from "@/components/ui/Panel";
-import { Kpi, BreakdownRow, fmtUsd, fmtLocal, fmtMonths } from "@/components/ui/Metrics";
+import { Kpi, BreakdownRow, fmtUsd, fmtLocal, fmtMonths, fmtNum } from "@/components/ui/Metrics";
 import type { CostBreakdown } from "@/lib/calc/engine";
 
 export function SummaryPanel({
@@ -9,6 +9,7 @@ export function SummaryPanel({
   currencyCode,
   currencySymbol,
   fx,
+  buildingGfaM2,
 }: {
   cost: CostBreakdown;
   opex: number;
@@ -16,6 +17,9 @@ export function SummaryPanel({
   currencyCode: string;
   currencySymbol?: string;
   fx: number;
+  /** This facility's gross floor area, m² — only set when it has a generated
+   * building (see useProjectEditor.ts); shows an all-in $/m² KPI when present. */
+  buildingGfaM2?: number | null;
 }) {
   return (
     <Panel title="ESTIMATE SUMMARY">
@@ -24,6 +28,9 @@ export function SummaryPanel({
         <Kpi label={`TOTAL (${currencyCode})`} value={fmtLocal(cost.grandTotal * fx, currencySymbol)} />
         <Kpi label="PROGRAMME DURATION" value={fmtMonths(totalMonths)} />
         <Kpi label="RECURRING OPEX (USD/YR)" value={fmtUsd(opex)} />
+        {!!buildingGfaM2 && (
+          <Kpi label="COST PER M² (USD, ALL-IN)" value={`${fmtUsd(cost.grandTotal / buildingGfaM2)}/m²`} sub={`at ${fmtNum(buildingGfaM2)} m²`} />
+        )}
       </div>
       <BreakdownRow label="Core scope construction" value={fmtUsd(cost.coreConstruction)} />
       <BreakdownRow label="Addon construction (included)" value={fmtUsd(cost.addonConstruction)} />

@@ -1,5 +1,5 @@
 import { Panel } from "@/components/ui/Panel";
-import { fmtUsd } from "@/components/ui/Metrics";
+import { fmtUsd, fmtNum, fmtPct } from "@/components/ui/Metrics";
 import type { FeasibilityResult } from "@/lib/calc/engine";
 
 const VERDICT_COPY: Record<FeasibilityResult["verdict"], (f: FeasibilityResult) => { title: string; desc: string; color: string }> = {
@@ -15,7 +15,7 @@ const VERDICT_COPY: Record<FeasibilityResult["verdict"], (f: FeasibilityResult) 
   }),
   conditional_ops: (f) => ({
     title: "Capital feasible, operations fragile",
-    desc: `Revenue covers only ${Math.round(f.sustainabilityRatio)}% of estimated annual operating cost.`,
+    desc: `Revenue covers only ${fmtNum(f.sustainabilityRatio)}% of estimated annual operating cost.`,
     color: "var(--color-amber)",
   }),
   feasible: () => ({
@@ -43,7 +43,7 @@ export function FeasibilityPanel({ feasibility }: { feasibility: FeasibilityResu
         </div>
         <div className="border border-paper-line px-2 py-1.5">
           <div className="text-[10px] text-muted">REVENUE/OPEX RATIO</div>
-          <div className="font-mono font-semibold">{Math.round(feasibility.sustainabilityRatio)}%</div>
+          <div className="font-mono font-semibold">{fmtPct(feasibility.sustainabilityRatio)}</div>
         </div>
       </div>
     </Panel>
