@@ -110,21 +110,38 @@ Location, funding and feasibility all live on the **program**, not the facility:
   `annualRevenueUsd` are program-level too. Escalation still runs against each
   facility's *own* schedule length (`computeCost()` in `lib/calc/engine.ts`),
   it's just one shared rate.
-- **The feasibility verdict** (`computeFeasibility()`) is computed once, at the
-  program level, against `computeProgramCapex()` — the sum of every *included*
-  facility's own subtotal (`computeCost().grandTotal`, which no longer includes
-  land) plus the program's land cost — and `computeProgramOpex()`, the same sum
-  for recurring cost. A facility's own page shows its own subtotal, confidence
-  band and recurring cost; it doesn't compute or show a feasibility verdict of
-  its own.
+- **The feasibility verdict, capital cost, confidence band, operating cost
+  and schedule duration are all computed together by one function**,
+  `computeProgramReport()` in `lib/calc/engine.ts` — against every
+  *included* facility's own subtotal (`computeCost().grandTotal`, which no
+  longer includes land), confidence band, and opex, plus the program's land
+  cost. A facility's own page shows its own subtotal, confidence band and
+  recurring cost; it doesn't compute or show a feasibility verdict of its
+  own. Every aggregate `computeProgramReport()` returns is built by rounding
+  each facility's own figure to the dollar *before* summing (not summing
+  exact values and rounding the total independently) — the deliberate fix
+  for a real bug: independently-rounded aggregates can drift by a dollar or
+  two from the sum of the rounded rows a report shows them next to, which
+  reads as the numbers not adding up even though nothing is actually wrong.
+  It also reports every headline figure (coverage, gap, opex, operating
+  balance) at *both* the point estimate and the estimate's own upper
+  confidence band, rather than a single figure that quietly hides how much
+  the AACE classification's own uncertainty could move it, and uncaps
+  funding coverage past 100% so an over-funded program shows a surplus
+  instead of a gap frozen at zero.
 - **Recurring/operating cost is itemized per facility, not one program-wide
   number.** Each facility has its own `project_opex_items` rows (salaries,
   maintenance, utilities, ...), managed on that facility's own page
   (`OperatingCostsPanel.tsx`). `computeFacilityOpex()` sums a facility's
-  *included* items; a facility with zero items instead gets an auto-estimate —
-  `programs.opexPctOfCapexPerYear`% of *that facility's own* capex, not the
-  program's. `programs.opexOverrideUsd`, when set above 0, replaces the whole
-  computed program total outright — see `computeFeasibility()`'s second
+  *included* items; a facility with zero items instead gets an auto-estimate
+  — `programs.opexPctOfCapexPerYear`% of *that facility's own* capex
+  (rounded to the dollar first, for the same reconciliation reason as
+  above), not the program's. This is a flat multiplier, not a staffing/
+  utilities/maintenance calculation — `computeProgramReport()` flags which
+  facilities are using it (`isItemizedOpex: false`) so a report can mark
+  those figures as estimates rather than presenting them as real.
+  `programs.opexOverrideUsd`, when set above 0, replaces the whole computed
+  program total outright — see `computeProgramReport()`'s `funding`
   parameter, precomputed by the caller rather than derived internally.
 - **Every facility can be toggled in or out of the program's totals**
   (`projects.isIncluded`, default `true`) without deleting it — same "present
@@ -245,10 +262,12 @@ lib/
   calc/engine.ts      Pure calculation functions — no DB, no fetch. Per-facility cost/
                       schedule, generateBuildingFromTemplate() (turns a template +
                       a GFA into one BOQ row per UniFormat division), and the
-                      program-level computeProgramCapex()/computeFeasibility() all
-                      live here, shared verbatim by API routes (server) and the
-                      editor (client), so there is exactly one implementation of
-                      the math to trust.
+                      program-level computeProgramReport() (capex, confidence band,
+                      opex, funding coverage/gap, feasibility verdict, schedule —
+                      all reconciled against each other, see "Programs & facilities"
+                      above) all live here, shared verbatim by API routes (server)
+                      and the editor (client), so there is exactly one implementation
+                      of the math to trust.
   data.ts             Drizzle query helpers — getBuildingTemplates() nests each
                       template's divisions; getProgramFull()/getProjectFull()
                       assemble a program's or one facility's raw rows (location
@@ -352,6 +371,19 @@ per-program catalog to manage anymore.
 
 ## Design notes worth knowing before extending this
 
+- **Every field on the program and facility pages saves itself the instant it
+  changes** — there's no separate draft/submit step, and no batch of local
+  edits sitting unsent. `lib/useSaveStatus.ts`'s `track()` wraps each
+  individual PATCH and drives the `SaveStatusBadge` next to the page title
+  ("Saving…" → "Saved ✓"/an error), so every single change gets its own
+  live confirmation. The **"Save progress"** button at the bottom of each
+  page (`useProjectEditor.ts`/`useProgramEditor.ts`'s `saveProgress()`) adds
+  an explicit, user-triggered checkpoint on top of that — it re-sends the
+  whole current settings object as one PATCH, which is a genuine resync (not
+  a no-op "reassurance" button), useful if someone isn't sure everything
+  landed or a request dropped along the way. BOQ/opex rows aren't part of
+  this resend since they already save individually the same way; there's
+  nothing about them a page-level PATCH could re-send.
 - **UniFormat buckets are mutually exclusive, not additive with a blended rate.**
   `generateBuildingFromTemplate()` prices Substructure (A), Shell (B), Interiors (C),
   Services (D), etc. as separate divisions, each with its own $/m² rate — there's no

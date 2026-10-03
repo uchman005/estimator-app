@@ -17,11 +17,12 @@ interface CountrySummary {
 }
 
 export function useProjectEditor(projectId: number) {
-  const { status: saveStatus, track } = useSaveStatus();
+  const { status: saveStatus, track, trackDebounced, cancelDebounced } = useSaveStatus();
   const [ref, setRef] = useState<ReferenceData | null>(null);
   const [project, setProject] = useState<ProjectRow | null>(null);
   const [program, setProgram] = useState<ProgramSummary | null>(null);
   const [country, setCountry] = useState<CountrySummary | null>(null);
+  const [regionName, setRegionName] = useState<string | null>(null);
   const [fx, setFx] = useState(1);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [opexItems, setOpexItems] = useState<OpexItemRow[]>([]);
@@ -46,6 +47,7 @@ export function useProjectEditor(projectId: number) {
     setProject(projData.project);
     setProgram(projData.program);
     setCountry(projData.country);
+    setRegionName(projData.region?.name ?? null);
     setFx(projData.fx);
     setRole(projData.role);
     setCostIndex(projData.costIndex);
@@ -138,13 +140,37 @@ export function useProjectEditor(projectId: number) {
     [opexItems, cost, program]
   );
 
+  function patchProjectRequest(patch: Record<string, unknown>) {
+    return fetch(`/api/projects/${projectId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+  }
+  // Debounced: a NumField/Input's onChange fires on every keystroke, so
+  // without this, typing a 6-digit number fired 6 separate PATCH requests.
+  // Local state still updates synchronously below — only the network write
+  // waits out the pause — see useSaveStatus.ts's own comment for the merge/
+  // flush-on-unmount details.
   function patchProject(patch: Partial<ProjectRow>) {
     setProject((p) => (p ? { ...p, ...patch } : p));
-    track(fetch(`/api/projects/${projectId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }));
+    trackDebounced("project", patch, patchProjectRequest);
+  }
+  // The explicit "Save progress" button. Every field on this page already
+  // saves itself shortly after it changes (see patchProject/patchItem/
+  // patchOpexItem above, each debounced-but-automatic) — there's no separate
+  // local draft sitting unsent. What this genuinely does: re-sends the
+  // facility's whole settings object as one PATCH *immediately*, bypassing
+  // the debounce — so a user who isn't sure everything landed (or whose
+  // connection dropped one save along the way) gets a real resync and a
+  // fresh "Saved ✓" right away, not just a reassuring button that silently
+  // does nothing, and not another few-hundred-ms wait on top.
+  function saveProgress() {
+    if (!project) return;
+    cancelDebounced("project");
+    track(patchProjectRequest({ ...project }));
   }
   function patchItem(id: number, patch: Partial<ItemRow>) {
     setItems((arr) => arr.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-    track(fetch(`/api/projects/${projectId}/items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }));
+    trackDebounced(`item:${id}`, patch, (merged) =>
+      fetch(`/api/projects/${projectId}/items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(merged) })
+    );
   }
   async function addItem() {
     const res = await fetch(`/api/projects/${projectId}/items`, {
@@ -177,7 +203,9 @@ export function useProjectEditor(projectId: number) {
   }
   function patchOpexItem(id: number, patch: Partial<OpexItemRow>) {
     setOpexItems((arr) => arr.map((it) => (it.id === id ? { ...it, ...patch } : it)));
-    track(fetch(`/api/projects/${projectId}/opex-items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }));
+    trackDebounced(`opex:${id}`, patch, (merged) =>
+      fetch(`/api/projects/${projectId}/opex-items/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(merged) })
+    );
   }
   async function deleteOpexItem(id: number) {
     setOpexItems((arr) => arr.filter((it) => it.id !== id));
@@ -209,10 +237,10 @@ export function useProjectEditor(projectId: number) {
   }
 
   return {
-    ref, project, program, country, fx, items, opexItems, loading, accessError, role, genInfo, genBusy, costIndex,
+    ref, project, program, country, regionName, fx, items, opexItems, loading, accessError, role, genInfo, genBusy, costIndex,
     aace, buildingGfaM2, saveStatus,
     settings, cost, schedule, opex, autoOpexEstimate,
-    patchProject, patchItem, addItem, deleteItem, generateBuilding,
+    patchProject, patchItem, addItem, deleteItem, generateBuilding, saveProgress,
     addOpexItem, patchOpexItem, deleteOpexItem,
   };
 }

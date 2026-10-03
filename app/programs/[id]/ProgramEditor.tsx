@@ -9,7 +9,9 @@ import { FundingPanel } from "./components/FundingPanel";
 import { CollaboratorsPanel } from "./components/CollaboratorsPanel";
 import { ProgramSummaryPanel } from "./components/ProgramSummaryPanel";
 import { FeasibilityPanel } from "./components/FeasibilityPanel";
+import { ProgramPrintSummary } from "./components/ProgramPrintSummary";
 import { SaveStatusBadge } from "@/components/ui/SaveStatusBadge";
+import { Button } from "@/components/ui/Button";
 
 export default function ProgramEditor({ programId, currentUserEmail }: { programId: number; currentUserEmail: string }) {
   const s = useProgramEditor(programId);
@@ -29,7 +31,7 @@ export default function ProgramEditor({ programId, currentUserEmail }: { program
     );
   }
 
-  if (s.loading || !s.ref || !s.program || !s.feasibility || !s.country) {
+  if (s.loading || !s.ref || !s.program || !s.report || !s.country) {
     return (
       <AppShell email={currentUserEmail}>
         <div className="p-10 text-sm text-muted">Loading program…</div>
@@ -60,18 +62,21 @@ export default function ProgramEditor({ programId, currentUserEmail }: { program
               <SaveStatusBadge status={s.saveStatus} className="ml-2" />
             </p>
           </div>
-          <Link href="/" className="whitespace-nowrap text-xs text-blueprint underline">
+          <Button variant="ghost" className="print:hidden" onClick={() => window.print()}>
+            Print summary
+          </Button>
+          <Link href="/" className="whitespace-nowrap text-xs text-blueprint underline print:hidden">
             ← All programs
           </Link>
         </header>
 
         {s.role === "viewer" && (
-          <div className="mb-5 rounded-xl border border-amber bg-surface-alt px-3 py-2 text-[12px] text-ink">
+          <div className="mb-5 rounded-xl border border-amber bg-surface-alt px-3 py-2 text-[12px] text-ink print:hidden">
             You have view-only access to this program — changes are disabled.
           </div>
         )}
 
-        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[1.55fr_1fr]">
+        <div className="grid grid-cols-1 items-start gap-5 print:hidden lg:grid-cols-[1.55fr_1fr]">
           <fieldset disabled={!canEdit} className="space-y-5 disabled:opacity-70">
             <CountryRegionPanel
               program={s.program}
@@ -113,22 +118,44 @@ export default function ProgramEditor({ programId, currentUserEmail }: { program
             <ProgramSummaryPanel
               facilities={s.facilities}
               landCostUsd={s.program.landCostUsd}
-              capex={s.capex}
-              bandLow={s.bandLow}
-              bandHigh={s.bandHigh}
-              totalMonths={s.totalMonths}
+              report={s.report}
               currencyCode={s.country.currencyCode}
               currencySymbol={currencySymbol}
               fx={s.country.fx}
-              fundingCoverage={s.feasibility.coverage}
-              fundingGap={s.feasibility.gap}
-              opex={s.autoOpex}
+              fxFetchedAt={s.country.fxFetchedAt}
+              fxSource={s.country.fxSource}
               annualRevenueUsd={s.program.annualRevenueUsd}
-              operatingBalance={s.feasibility.operatingBalance}
+              opexProjection={s.opexProjection}
+              opexProjectionYears={s.opexProjectionYears}
+              escalationPct={s.program.escalationPct}
             />
-            <FeasibilityPanel feasibility={s.feasibility} />
+            <FeasibilityPanel report={s.report} />
           </div>
         </div>
+
+        {canEdit && (
+          <div className="mt-5 flex items-center justify-center gap-3 border-t border-paper-line pt-5 print:hidden">
+            <Button variant="primary" onClick={s.saveProgress}>
+              Save progress
+            </Button>
+            <SaveStatusBadge status={s.saveStatus} />
+          </div>
+        )}
+
+        <ProgramPrintSummary
+          program={s.program}
+          countryName={s.country.name}
+          regionName={s.region?.name ?? null}
+          facilities={s.facilities}
+          report={s.report}
+          currencyCode={s.country.currencyCode}
+          currencySymbol={currencySymbol}
+          fx={s.country.fx}
+          fxFetchedAt={s.country.fxFetchedAt}
+          fxSource={s.country.fxSource}
+          opexProjection={s.opexProjection}
+          opexProjectionYears={s.opexProjectionYears}
+        />
       </div>
     </AppShell>
   );

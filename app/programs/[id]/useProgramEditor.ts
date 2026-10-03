@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { computeProgramCapex, computeFeasibility } from "@/lib/calc/engine";
+import { computeProgramReport, computeOpexProjection } from "@/lib/calc/engine";
 import { useSaveStatus } from "@/lib/useSaveStatus";
 import type { AddFacilityInput } from "@/components/ui/AddFacilityForm";
 import type { ProgramRow, FacilityRow, ReferenceData, CollaboratorRow } from "./components/types";
 
+// Nominal multi-year opex outlook horizon — see computeOpexProjection()'s
+// own comment for why this is undiscounted. A plain constant, not a program
+// field, since there's no per-program input for it yet (matches the server
+// route's own OPEX_PROJECTION_YEARS).
+const OPEX_PROJECTION_YEARS = 10;
+
 export function useProgramEditor(programId: number) {
   const router = useRouter();
-  const { status: saveStatus, track } = useSaveStatus();
+  const { status: saveStatus, track, trackDebounced, cancelDebounced } = useSaveStatus();
   const [ref, setRef] = useState<ReferenceData | null>(null);
   const [program, setProgram] = useState<ProgramRow | null>(null);
   const [facilities, setFacilities] = useState<FacilityRow[]>([]);
-  const [totalMonths, setTotalMonths] = useState(0);
   const [role, setRole] = useState<"owner" | "editor" | "viewer" | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,7 +41,6 @@ export function useProgramEditor(programId: number) {
     setProgram(progData.program);
     setRole(progData.role);
     setFacilities(progData.facilities);
-    setTotalMonths(progData.totalMonths);
     setLoading(false);
   }, [programId]);
 
@@ -69,32 +73,63 @@ export function useProgramEditor(programId: number) {
   const includedFacilities = useMemo(() => facilities.filter((f) => f.project.isIncluded), [facilities]);
 
   // Recomputed on every keystroke, same pattern as the facility editor
-  // (lib/calc/engine.ts is pure and safe on the client). Note: a change to
+  // (lib/calc/engine.ts is pure and safe on the client) — one function now
+  // covers capex/band/opex/coverage/gap/runway/duration together (see
+  // computeProgramReport()'s own comment for why that consolidation
+  // matters), so toggling a facility or editing funding recomputes every
+  // figure in the report at once, consistently. Note: a change to
   // escalationPct only takes effect in each facility's own subtotal after
   // the next full reload — that recompute needs each facility's raw items,
   // which this page doesn't hold — landCostUsd/funding fields update instantly.
-  const capex = useMemo(
-    () => (program ? computeProgramCapex(includedFacilities.map((f) => ({ grandTotal: f.cost.grandTotal })), program.landCostUsd) : 0),
+  const report = useMemo(
+    () =>
+      program
+        ? computeProgramReport(
+            includedFacilities.map((f) => ({
+              grandTotal: f.cost.grandTotal,
+              bandLow: f.cost.bandLow,
+              bandHigh: f.cost.bandHigh,
+              opex: f.opex,
+              isItemizedOpex: f.isItemizedOpex,
+              totalMonths: f.schedule.totalMonths,
+            })),
+            program.landCostUsd,
+            program,
+            program.opexPctOfCapexPerYear
+          )
+        : null,
     [includedFacilities, program]
   );
-  // Each facility's own opex (itemized-or-%-fallback) is already resolved
-  // server-side per facility — summing it here, rather than recomputing from
-  // scratch, is what makes toggling a facility recalc instantly without
-  // needing that facility's raw opex line items loaded on this page.
-  const autoOpex = useMemo(() => includedFacilities.reduce((sum, f) => sum + f.opex, 0), [includedFacilities]);
-  const bandLow = useMemo(
-    () => (program ? includedFacilities.reduce((s, f) => s + f.cost.bandLow, 0) + program.landCostUsd : 0),
-    [includedFacilities, program]
+  const opexProjection = useMemo(
+    () => (program && report ? computeOpexProjection(report.opex, OPEX_PROJECTION_YEARS, program.escalationPct) : 0),
+    [report, program]
   );
-  const bandHigh = useMemo(
-    () => (program ? includedFacilities.reduce((s, f) => s + f.cost.bandHigh, 0) + program.landCostUsd : 0),
-    [includedFacilities, program]
-  );
-  const feasibility = useMemo(() => (program ? computeFeasibility(capex, autoOpex, program) : null), [capex, autoOpex, program]);
 
+  function patchProgramRequest(patch: Record<string, unknown>) {
+    return fetch(`/api/programs/${programId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+  }
+  // Debounced: a NumField/Input's onChange fires on every keystroke, so
+  // without this, typing a 6-digit number fired 6 separate PATCH requests.
+  // Local state still updates synchronously below — only the network write
+  // waits out the pause — see useSaveStatus.ts's own comment for the merge/
+  // flush-on-unmount details.
   function patchProgram(patch: Partial<ProgramRow>) {
     setProgram((p) => (p ? { ...p, ...patch } : p));
-    track(fetch(`/api/programs/${programId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }));
+    trackDebounced("program", patch, patchProgramRequest);
+  }
+  // The explicit "Save progress" button. Every field on this page already
+  // saves itself shortly after it changes (patchProgram above, and each
+  // facility's own type/included toggle) — there's no separate local draft
+  // sitting unsent. What this genuinely does: re-sends the program's whole
+  // settings object as one PATCH *immediately*, bypassing the debounce — so
+  // a user who isn't sure everything landed (or whose connection dropped
+  // one save along the way) gets a real resync and a fresh "Saved ✓" right
+  // away, not just a reassuring button that silently does nothing, and not
+  // another few-hundred-ms wait on top.
+  function saveProgress() {
+    if (!program) return;
+    cancelDebounced("program");
+    track(patchProgramRequest({ ...program }));
   }
 
   async function addFacility(input: AddFacilityInput) {
@@ -169,10 +204,10 @@ export function useProgramEditor(programId: number) {
   }
 
   return {
-    ref, program, facilities, capex, autoOpex, bandLow, bandHigh, totalMonths, feasibility,
+    ref, program, facilities, report, opexProjection, opexProjectionYears: OPEX_PROJECTION_YEARS,
     loading, accessError, role, fxStatus, fxBusy, collaborators, saveStatus,
     country, region, costIndex,
-    patchProgram, addFacility, changeFacilityType, toggleFacilityIncluded, deleteFacility, refreshFx,
+    patchProgram, saveProgress, addFacility, changeFacilityType, toggleFacilityIncluded, deleteFacility, refreshFx,
     inviteCollaborator, changeCollaboratorRole, removeCollaborator,
   };
 }

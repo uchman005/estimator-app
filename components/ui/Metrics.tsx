@@ -56,8 +56,19 @@ export function fmtNum(n: number): string {
 export function fmtPct(n: number): string {
   return `${fmtNum(n)}%`;
 }
+// Whole months only — a Class 5 (concept-stage) schedule has no business
+// implying sub-month precision; "27.63 months" reads as more certain than
+// this model actually is. Rounds, doesn't truncate (27.5 → 28, not 27).
 export function fmtMonths(n: number): string {
-  return `${fmtNum(n)} mo`;
+  return `${Math.round(n).toLocaleString("en-US")} mo`;
+}
+// A magnitude only, no sign — pair with a label that already says which way
+// it goes ("Annual deficit", "Annual surplus"). A signed number under an
+// already-signed label is a double negative ("Annual deficit: −$X") that
+// makes the sign convention ambiguous; this is the one place that gets
+// resolved, rather than every call site re-deciding how to show it.
+export function fmtUsdMagnitude(n: number): string {
+  return fmtUsd(Math.abs(n));
 }
 export function fmtUsd(n: number): string {
   const neg = n < 0;

@@ -40,7 +40,7 @@ export function AppShell({ email, children }: { email: string; children: React.R
   return (
     <div className="min-h-screen bg-bg lg:flex">
       <aside
-        className={`flex shrink-0 flex-col bg-sidebar px-3 py-4 text-white/90 transition-[width] duration-150 lg:sticky lg:top-0 lg:h-screen ${
+        className={`flex shrink-0 flex-col bg-sidebar px-3 py-4 text-white/90 transition-[width] duration-150 lg:sticky lg:top-0 lg:h-screen print:hidden ${
           collapsed ? "lg:w-[68px]" : "lg:w-60"
         } ${hydrated ? "" : "lg:w-60"}`}
       >

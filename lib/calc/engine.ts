@@ -174,62 +174,156 @@ export function computeCost(items: ProjectItemLite[], settings: ProjectSettings,
   return { coreConstruction, addonConstruction, totalConstruction, softCosts, escalation, fastTrackPremium, contingency, grandTotal, bandLow, bandHigh };
 }
 
-/** A Program's total capital cost: every INCLUDED facility's own subtotal
- * (each already inclusive of its own soft costs/escalation/contingency),
- * plus the site's land cost — a known, fixed figure, not run through any
- * facility's construction contingency. Facilities toggled off
- * (isIncluded: false) contribute nothing — filter them out before calling
- * this, same as the caller filters `facilities` for computeProgramOpex()
- * below. This is the ONE place a Program's capex is summed — API routes and
- * any future UI should call this rather than re-deriving the sum. */
-export function computeProgramCapex(facilities: { grandTotal: number }[], landCostUsd: number): number {
-  return facilities.reduce((sum, f) => sum + f.grandTotal, 0) + landCostUsd;
-}
-
 /** One facility's own annual recurring/operating cost: the sum of its own
  * included opex line items (salaries, maintenance, ...) if it has any,
  * otherwise an auto-estimate — fallbackPctOfCapex% of THIS facility's own
  * capex subtotal, not the whole program's. A facility only needs itemizing
- * once you want a real number instead of that estimate. */
+ * once you want a real number instead of that estimate. `facilityCapex` is
+ * rounded to the whole dollar BEFORE the percentage is applied — the same
+ * rounded figure a facility's cost is ever displayed as — so "this row is
+ * 8% of that capex row" holds exactly when someone checks it by hand,
+ * instead of drifting because the fallback was computed off an unrounded
+ * internal value nobody can see. */
 export function computeFacilityOpex(items: OpexItemLite[], fallbackPctOfCapex: number, facilityCapex: number): number {
-  if (items.length === 0) return facilityCapex * (fallbackPctOfCapex / 100);
+  if (items.length === 0) return Math.round(facilityCapex) * (fallbackPctOfCapex / 100);
   return items.reduce((sum, it) => (it.isIncluded ? sum + it.annualAmountUsd : sum), 0);
 }
 
-/** A Program's total annual recurring/operating cost: computeFacilityOpex()
- * summed across every INCLUDED facility — the per-facility counterpart to
- * computeProgramCapex(). Filter `facilities` to isIncluded ones before
- * calling, same as for computeProgramCapex(). */
-export function computeProgramOpex(facilities: { grandTotal: number; opexItems: OpexItemLite[] }[], fallbackPctOfCapex: number): number {
-  return facilities.reduce((sum, f) => sum + computeFacilityOpex(f.opexItems, fallbackPctOfCapex, f.grandTotal), 0);
+export type FeasibilityVerdict = "not_feasible" | "conditional_funding" | "conditional_ops" | "feasible";
+
+export interface ProgramFacilityInput {
+  grandTotal: number;
+  bandLow: number;
+  bandHigh: number;
+  opex: number; // computeFacilityOpex()'s result for this facility — already itemized-or-fallback
+  isItemizedOpex: boolean; // opexItems.length > 0 — whether opex scales with the capex band below, or is a fixed real figure
+  totalMonths: number;
 }
 
-export interface FeasibilityResult {
-  coverage: number;
-  gap: number;
+export interface ProgramReport {
+  // Capital — every aggregate here is a sum of each facility's OWN rounded
+  // figure (plus rounded land), not an independently-rounded sum of exact
+  // internal values. That's what makes "the four rows add up to the total"
+  // literally true by construction, not a coincidence of the numbers — see
+  // the note on computeProgramCapex's replacement below.
+  capex: number;
+  bandLow: number;
+  bandHigh: number;
+
+  // Operating cost — same reconciliation, plus a band: a %-fallback
+  // facility's opex is tied to ITS OWN capex band (8% of a cheaper/costlier
+  // building is a cheaper/costlier building to run); an itemized facility's
+  // real figure doesn't move with the capex band at all, since it was never
+  // derived from capex in the first place.
   opex: number;
+  opexBandLow: number;
+  opexBandHigh: number;
+
+  // Funding coverage — NOT capped at 100%: a program that's over-funded at
+  // the point estimate shows `surplus` instead of a hidden `gap` of 0, and
+  // `coverageAtBandHigh`/`gapAtBandHigh` show the same picture at the
+  // estimate's own worst case, not just the single point figure.
+  coverage: number;
+  coverageAtBandHigh: number;
+  gap: number;
+  gapAtBandHigh: number;
+  surplus: number;
+
+  // Operations — operatingBalance at the point estimate, plus its own
+  // range (driven by the opex band above): AtBandLow pairs with the
+  // costlier/worse opex case, AtBandHigh with the cheaper/better one.
   operatingBalance: number;
+  operatingBalanceAtBandLow: number;
+  operatingBalanceAtBandHigh: number;
   sustainabilityRatio: number;
-  verdict: "not_feasible" | "conditional_funding" | "conditional_ops" | "feasible";
+  // Years a capital surplus (if any) could fund the operating shortfall
+  // on its own, before new funding would be needed — 0 when there's no
+  // surplus or no opex to measure it against.
+  fundingRunwayYears: number;
+
+  // Schedule — "parallel" is the longest single facility (the existing
+  // assumption: every facility breaks ground at once); "sequential" is the
+  // sum of all of them (one crew, one facility after another) — the two
+  // honest ends of a range this model has no real way to pick between on
+  // its own, rather than presenting the parallel figure as THE duration.
+  totalMonthsParallel: number;
+  totalMonthsSequential: number;
+
+  verdict: FeasibilityVerdict;
 }
 
-/** autoOpex is the program's total recurring cost as computed by
- * computeProgramOpex() (itemized-per-facility, falling back to a %-of-capex
- * estimate) — funding.opexOverrideUsd, when set, is a program-wide manual
- * override that wins over that computed total outright. */
-export function computeFeasibility(grandTotal: number, autoOpex: number, funding: FundingSettings): FeasibilityResult {
-  const opex = funding.opexOverrideUsd > 0 ? funding.opexOverrideUsd : autoOpex;
-  const operatingBalance = funding.annualRevenueUsd - opex;
-  const sustainabilityRatio = opex > 0 ? (funding.annualRevenueUsd / opex) * 100 : funding.annualRevenueUsd > 0 ? 100 : 0;
-  const coverage = grandTotal > 0 ? Math.min(100, (funding.fundedUsd / grandTotal) * 100) : 0;
-  const gap = Math.max(0, grandTotal - funding.fundedUsd);
+/** The one place a Program's whole capital/funding/operating picture is
+ * computed — replaces the old computeProgramCapex()/computeProgramOpex()/
+ * computeFeasibility() trio, which independently rounded their own
+ * aggregates and could drift from each other and from the per-facility rows
+ * a report shows alongside them. Call with every INCLUDED facility only —
+ * same filtering contract the old functions had. */
+export function computeProgramReport(
+  facilities: ProgramFacilityInput[],
+  landCostUsd: number,
+  funding: FundingSettings,
+  fallbackPctOfCapex: number
+): ProgramReport {
+  const roundedLand = Math.round(landCostUsd);
+  const capex = facilities.reduce((s, f) => s + Math.round(f.grandTotal), 0) + roundedLand;
+  const bandLow = facilities.reduce((s, f) => s + Math.round(f.bandLow), 0) + roundedLand;
+  const bandHigh = facilities.reduce((s, f) => s + Math.round(f.bandHigh), 0) + roundedLand;
 
-  let verdict: FeasibilityResult["verdict"] = "feasible";
+  const opex = facilities.reduce((s, f) => s + Math.round(f.opex), 0);
+  const opexBandLow = facilities.reduce(
+    (s, f) => s + Math.round(f.isItemizedOpex ? f.opex : f.bandLow * (fallbackPctOfCapex / 100)),
+    0
+  );
+  const opexBandHigh = facilities.reduce(
+    (s, f) => s + Math.round(f.isItemizedOpex ? f.opex : f.bandHigh * (fallbackPctOfCapex / 100)),
+    0
+  );
+
+  const effectiveOpex = funding.opexOverrideUsd > 0 ? funding.opexOverrideUsd : opex;
+  const effectiveOpexAtBandLow = funding.opexOverrideUsd > 0 ? funding.opexOverrideUsd : opexBandHigh; // costlier opex = worse case
+  const effectiveOpexAtBandHigh = funding.opexOverrideUsd > 0 ? funding.opexOverrideUsd : opexBandLow; // cheaper opex = better case
+
+  const operatingBalance = funding.annualRevenueUsd - effectiveOpex;
+  const operatingBalanceAtBandLow = funding.annualRevenueUsd - effectiveOpexAtBandLow;
+  const operatingBalanceAtBandHigh = funding.annualRevenueUsd - effectiveOpexAtBandHigh;
+  const sustainabilityRatio = effectiveOpex > 0 ? (funding.annualRevenueUsd / effectiveOpex) * 100 : funding.annualRevenueUsd > 0 ? 100 : 0;
+
+  const coverage = capex > 0 ? (funding.fundedUsd / capex) * 100 : 0;
+  const coverageAtBandHigh = bandHigh > 0 ? (funding.fundedUsd / bandHigh) * 100 : 0;
+  const gap = Math.max(0, capex - funding.fundedUsd);
+  const gapAtBandHigh = Math.max(0, bandHigh - funding.fundedUsd);
+  const surplus = Math.max(0, funding.fundedUsd - capex);
+  const fundingRunwayYears = surplus > 0 && effectiveOpex > 0 ? surplus / effectiveOpex : 0;
+
+  const totalMonthsParallel = facilities.reduce((max, f) => Math.max(max, f.totalMonths), 0);
+  const totalMonthsSequential = facilities.reduce((s, f) => s + f.totalMonths, 0);
+
+  let verdict: FeasibilityVerdict = "feasible";
   if (coverage < 50) verdict = "not_feasible";
   else if (coverage < 90) verdict = "conditional_funding";
   else if (sustainabilityRatio < 70) verdict = "conditional_ops";
 
-  return { coverage, gap, opex, operatingBalance, sustainabilityRatio, verdict };
+  return {
+    capex, bandLow, bandHigh,
+    opex, opexBandLow, opexBandHigh,
+    coverage, coverageAtBandHigh, gap, gapAtBandHigh, surplus,
+    operatingBalance, operatingBalanceAtBandLow, operatingBalanceAtBandHigh, sustainabilityRatio, fundingRunwayYears,
+    totalMonthsParallel, totalMonthsSequential,
+    verdict,
+  };
+}
+
+/** A simple nominal (NOT discounted to present value — no discount-rate
+ * assumption exists anywhere in this model, so this doesn't invent one)
+ * multi-year operating-cost projection: `annualOpex` compounding at
+ * `inflationPct` per year for `years` years. Reuses the program's own
+ * escalationPct as the inflation assumption, the same rate already used to
+ * escalate construction cost over the build schedule — there's no separate
+ * "opex inflation" input anywhere else in the app to divide this from. */
+export function computeOpexProjection(annualOpex: number, years: number, inflationPct: number): number {
+  let total = 0;
+  for (let y = 0; y < years; y++) total += annualOpex * Math.pow(1 + inflationPct / 100, y);
+  return total;
 }
 
 /* ---------------------------------------------------------------------- */

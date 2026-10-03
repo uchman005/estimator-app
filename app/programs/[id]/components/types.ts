@@ -72,6 +72,10 @@ export interface FacilityRow {
   cost: CostBreakdown;
   schedule: ScheduleBreakdown;
   opex: number; // itemized-or-%-fallback annual recurring cost, this facility's own
+  // Whether `opex` is a real itemized figure or the %-of-capex fallback —
+  // see computeProgramReport()'s own comment for why this matters (a
+  // fallback figure scales with the capex confidence band; a real one doesn't).
+  isItemizedOpex: boolean;
 }
 
 export interface CollaboratorRow {

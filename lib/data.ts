@@ -170,9 +170,8 @@ export async function getProjectFull(projectId: number) {
 
 /** A program and every facility inside it, each with its own raw items
  * (uncomputed — the caller runs computeCost/computeSchedule per facility and
- * computeProgramCapex/computeFeasibility across all of them, same division
- * of labour as the single-facility route: data.ts assembles rows, the route
- * does the math). */
+ * computeProgramReport() across all of them, same division of labour as the
+ * single-facility route: data.ts assembles rows, the route does the math). */
 export async function getProgramFull(programId: number) {
   const [program] = await db.select().from(programs).where(eq(programs.id, programId));
   if (!program) return null;

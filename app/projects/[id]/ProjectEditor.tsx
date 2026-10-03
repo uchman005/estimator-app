@@ -5,6 +5,8 @@ import { useProjectEditor } from "./useProjectEditor";
 import { AppShell } from "@/components/AppShell";
 import { fmtNum } from "@/components/ui/Metrics";
 import { SaveStatusBadge } from "@/components/ui/SaveStatusBadge";
+import { Button } from "@/components/ui/Button";
+import { FacilityPrintSummary } from "./components/FacilityPrintSummary";
 import { AaceClassPanel } from "./components/AaceClassPanel";
 import { BuildingTemplatePanel } from "./components/BuildingTemplatePanel";
 import { BuildingCostBreakdownPanel } from "./components/BuildingCostBreakdownPanel";
@@ -33,7 +35,7 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
     );
   }
 
-  if (s.loading || !s.ref || !s.project || !s.program || !s.country || !s.settings || !s.cost || !s.schedule) {
+  if (s.loading || !s.ref || !s.project || !s.program || !s.country || !s.settings || !s.cost || !s.schedule || !s.aace) {
     return (
       <AppShell email={currentUserEmail}>
         <div className="p-10 text-sm text-muted">Loading facility…</div>
@@ -67,21 +69,24 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
               <SaveStatusBadge status={s.saveStatus} className="ml-2" />
             </p>
           </div>
+          <Button variant="ghost" className="print:hidden" onClick={() => window.print()}>
+            Print summary
+          </Button>
         </header>
 
         {s.role === "viewer" && (
-          <div className="mb-5 rounded-xl border border-amber bg-surface-alt px-3 py-2 text-[12px] text-ink">
+          <div className="mb-5 rounded-xl border border-amber bg-surface-alt px-3 py-2 text-[12px] text-ink print:hidden">
             You have view-only access to this facility — changes are disabled.
           </div>
         )}
         {!s.project.isIncluded && (
-          <div className="mb-5 rounded-xl border border-clay bg-surface-alt px-3 py-2 text-[12px] text-ink">
+          <div className="mb-5 rounded-xl border border-clay bg-surface-alt px-3 py-2 text-[12px] text-ink print:hidden">
             This facility is toggled <b>out</b> of the program&apos;s totals — its cost and opex aren&apos;t counted toward
             the program&apos;s feasibility right now. Toggle it back on from the program&apos;s Facilities panel.
           </div>
         )}
 
-        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[1.55fr_1fr]">
+        <div className="grid grid-cols-1 items-start gap-5 print:hidden lg:grid-cols-[1.55fr_1fr]">
           <fieldset disabled={!canEdit} className="space-y-5 disabled:opacity-70">
             <AaceClassPanel
               classes={s.ref.aaceClasses}
@@ -135,6 +140,32 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
             <SchedulePanel schedule={s.schedule} />
           </div>
         </div>
+
+        {canEdit && (
+          <div className="mt-5 flex items-center justify-center gap-3 border-t border-paper-line pt-5 print:hidden">
+            <Button variant="primary" onClick={s.saveProgress}>
+              Save progress
+            </Button>
+            <SaveStatusBadge status={s.saveStatus} />
+          </div>
+        )}
+
+        <FacilityPrintSummary
+          project={s.project}
+          programName={s.program.name}
+          countryName={s.country.name}
+          regionName={s.regionName}
+          costIndex={s.costIndex}
+          aace={s.aace}
+          cost={s.cost}
+          schedule={s.schedule}
+          opex={s.opex}
+          buildingGfaM2={s.buildingGfaM2}
+          items={s.items}
+          currencyCode={s.country.currencyCode}
+          currencySymbol={currencySymbol}
+          fx={s.fx}
+        />
       </div>
     </AppShell>
   );

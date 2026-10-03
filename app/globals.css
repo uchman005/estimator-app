@@ -98,3 +98,30 @@ input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
+/* Print summaries (FacilityPrintSummary.tsx, ProgramPrintSummary.tsx) — the
+   rest of the page is marked print:hidden, this is the only thing that
+   prints. Plain black-on-white: printers/PDF exports render this far more
+   reliably than the themed dark-mode-aware palette the live app uses. */
+@media print {
+  @page {
+    margin: 14mm 12mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  .print-summary {
+    color: #000;
+  }
+  .print-summary table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  .print-summary tr {
+    break-inside: avoid;
+  }
+  .print-summary section {
+    break-inside: avoid;
+  }
+}

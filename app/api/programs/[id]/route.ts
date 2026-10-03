@@ -6,12 +6,13 @@ import { getProgramFull } from "@/lib/data";
 import {
   computeCost,
   computeSchedule,
-  computeProgramCapex,
   computeFacilityOpex,
-  computeProgramOpex,
-  computeFeasibility,
+  computeProgramReport,
+  computeOpexProjection,
   type ProjectSettings,
 } from "@/lib/calc/engine";
+
+const OPEX_PROJECTION_YEARS = 10;
 import { getCurrentUserFromRequest } from "@/lib/auth/session";
 import { requireProgramRole } from "@/lib/auth/permissions";
 
@@ -59,23 +60,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const cost = computeCost(f.items, settings, f.aace);
     const schedule = computeSchedule(f.items, settings);
     const opex = computeFacilityOpex(f.opexItems, full.program.opexPctOfCapexPerYear, cost.grandTotal);
-    return { project: f.project, items: f.items, opexItems: f.opexItems, cost, schedule, opex };
+    const isItemizedOpex = f.opexItems.length > 0;
+    return { project: f.project, items: f.items, opexItems: f.opexItems, cost, schedule, opex, isItemizedOpex };
   }).filter((f): f is NonNullable<typeof f> => f !== null);
 
   const included = facilities.filter((f) => f.project.isIncluded);
 
-  const capex = computeProgramCapex(included.map((f) => ({ grandTotal: f.cost.grandTotal })), full.program.landCostUsd);
-  const autoOpex = computeProgramOpex(
-    included.map((f) => ({ grandTotal: f.cost.grandTotal, opexItems: f.opexItems })),
+  const report = computeProgramReport(
+    included.map((f) => ({
+      grandTotal: f.cost.grandTotal,
+      bandLow: f.cost.bandLow,
+      bandHigh: f.cost.bandHigh,
+      opex: f.opex,
+      isItemizedOpex: f.isItemizedOpex,
+      totalMonths: f.schedule.totalMonths,
+    })),
+    full.program.landCostUsd,
+    full.program,
     full.program.opexPctOfCapexPerYear
   );
-  const feasibility = computeFeasibility(capex, autoOpex, full.program);
-  // Confidence band: each INCLUDED facility's own band (from its own AACE class) summed with the others, plus the fixed land cost.
-  const bandLow = included.reduce((s, f) => s + f.cost.bandLow, 0) + full.program.landCostUsd;
-  const bandHigh = included.reduce((s, f) => s + f.cost.bandHigh, 0) + full.program.landCostUsd;
-  // Site programme duration: facilities can be built in parallel across the
-  // site, so the critical path is whichever INCLUDED facility takes longest.
-  const totalMonths = included.reduce((max, f) => Math.max(max, f.schedule.totalMonths), 0);
+  // Nominal (undiscounted) multi-year opex outlook — see computeOpexProjection()'s
+  // own comment for why this isn't a discounted/NPV figure.
+  const opexProjection = computeOpexProjection(report.opex, OPEX_PROJECTION_YEARS, full.program.escalationPct);
 
   return NextResponse.json({
     program: full.program,
@@ -87,12 +93,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     fxSource: full.fxSource,
     costIndex,
     facilities,
-    capex,
-    bandLow,
-    bandHigh,
-    totalMonths,
-    opex: autoOpex,
-    feasibility,
+    report,
+    opexProjectionYears: OPEX_PROJECTION_YEARS,
+    opexProjection,
     role: access.role,
   });
 }
