@@ -105,6 +105,25 @@ export interface OpexItemRow {
   notes: string | null;
 }
 
+export const REVENUE_CATEGORIES = ["patient_fees", "pharmacy_lab", "rental_ancillary", "grants_subsidies", "other"] as const;
+export type RevenueCategory = (typeof REVENUE_CATEGORIES)[number];
+export const REVENUE_CATEGORY_LABEL: Record<RevenueCategory, string> = {
+  patient_fees: "Patient / service fees",
+  pharmacy_lab: "Pharmacy & lab services",
+  rental_ancillary: "Rental & ancillary income",
+  grants_subsidies: "Grants & subsidies",
+  other: "Other",
+};
+
+export interface RevenueItemRow {
+  id: number;
+  label: string;
+  category: RevenueCategory;
+  annualAmountUsd: number;
+  isIncluded: boolean;
+  notes: string | null;
+}
+
 export interface BuildingGenInfo {
   templateName: string;
   defaultFloors: number;

@@ -14,6 +14,7 @@ import { BoqPanel } from "./components/BoqPanel";
 import { SoftCostsPanel } from "./components/SoftCostsPanel";
 import { ScheduleAssumptionsPanel } from "./components/ScheduleAssumptionsPanel";
 import { OperatingCostsPanel } from "./components/OperatingCostsPanel";
+import { RevenueProjectionPanel } from "./components/RevenueProjectionPanel";
 import { SummaryPanel } from "./components/SummaryPanel";
 import { SchedulePanel } from "./components/SchedulePanel";
 
@@ -69,9 +70,17 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
               <SaveStatusBadge status={s.saveStatus} className="ml-2" />
             </p>
           </div>
-          <Button variant="ghost" className="print:hidden" onClick={() => window.print()}>
-            Print summary
-          </Button>
+          <div className="flex shrink-0 items-center gap-2 print:hidden">
+            <Link
+              href={`/projects/${s.project.id}/summary`}
+              className="whitespace-nowrap rounded-lg border border-border px-3 py-1.5 text-[12px] font-medium text-muted shadow-sm transition-colors hover:border-blueprint hover:text-blueprint"
+            >
+              Operational summary
+            </Link>
+            <Button variant="ghost" onClick={() => window.print()}>
+              Print structural summary
+            </Button>
+          </div>
         </header>
 
         {s.role === "viewer" && (
@@ -116,6 +125,13 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
               onAdd={s.addOpexItem}
               onChange={s.patchOpexItem}
               onDelete={s.deleteOpexItem}
+            />
+
+            <RevenueProjectionPanel
+              items={s.revenueItems}
+              onAdd={s.addRevenueItem}
+              onChange={s.patchRevenueItem}
+              onDelete={s.deleteRevenueItem}
             />
           </fieldset>
 

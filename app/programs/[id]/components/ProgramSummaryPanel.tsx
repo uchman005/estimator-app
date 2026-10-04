@@ -13,7 +13,6 @@ export function ProgramSummaryPanel({
   fx,
   fxFetchedAt,
   fxSource,
-  annualRevenueUsd,
   opexProjection,
   opexProjectionYears,
   escalationPct,
@@ -26,7 +25,6 @@ export function ProgramSummaryPanel({
   fx: number;
   fxFetchedAt: string | null;
   fxSource: string | null;
-  annualRevenueUsd: number;
   opexProjection: number;
   opexProjectionYears: number;
   escalationPct: number;
@@ -87,7 +85,21 @@ export function ProgramSummaryPanel({
       ))}
       <BreakdownRow label="Total recurring cost" value={`${fmtUsd(report.opex)}/yr`} strong />
       <BreakdownRow label="Confidence band" value={`${fmtUsd(report.opexBandLow)} – ${fmtUsd(report.opexBandHigh)}/yr`} />
-      <BreakdownRow label="Annual revenue" value={`${fmtUsd(annualRevenueUsd)}/yr`} />
+
+      <h3 className="mb-1 mt-3 text-[10.5px] font-semibold tracking-wide text-blueprint">ANNUAL REVENUE</h3>
+      {report.revenueIsOverridden ? (
+        <BreakdownRow label="Program-wide override" value={`${fmtUsd(report.revenue)}/yr`} />
+      ) : (
+        included.map((f) => <BreakdownRow key={f.project.id} label={f.project.name} value={`${fmtUsd(f.revenue)}/yr`} />)
+      )}
+      <BreakdownRow label="Total revenue" value={`${fmtUsd(report.revenue)}/yr`} strong />
+      {report.revenueIsOverridden && (
+        <p className="mt-1 text-[10px] text-muted">
+          Set as a flat program-wide override — see Funding panel. Remove it (set to 0) to use the sum of each
+          facility&apos;s own itemized revenue sources instead.
+        </p>
+      )}
+
       <BreakdownRow label={isDeficit ? "Annual deficit" : "Annual surplus"} value={`${fmtUsdMagnitude(report.operatingBalance)}/yr`} strong />
 
       <h3 className="mb-1 mt-3 text-[10.5px] font-semibold tracking-wide text-blueprint">{opexProjectionYears}-YEAR OPERATING OUTLOOK</h3>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useProgramEditor } from "./useProgramEditor";
 import { AppShell } from "@/components/AppShell";
@@ -9,12 +10,13 @@ import { FundingPanel } from "./components/FundingPanel";
 import { CollaboratorsPanel } from "./components/CollaboratorsPanel";
 import { ProgramSummaryPanel } from "./components/ProgramSummaryPanel";
 import { FeasibilityPanel } from "./components/FeasibilityPanel";
-import { ProgramPrintSummary } from "./components/ProgramPrintSummary";
 import { SaveStatusBadge } from "@/components/ui/SaveStatusBadge";
 import { Button } from "@/components/ui/Button";
+import { ConfirmDeleteModal } from "@/components/ui/ConfirmDeleteModal";
 
 export default function ProgramEditor({ programId, currentUserEmail }: { programId: number; currentUserEmail: string }) {
   const s = useProgramEditor(programId);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   if (s.accessError) {
     return (
@@ -62,9 +64,12 @@ export default function ProgramEditor({ programId, currentUserEmail }: { program
               <SaveStatusBadge status={s.saveStatus} className="ml-2" />
             </p>
           </div>
-          <Button variant="ghost" className="print:hidden" onClick={() => window.print()}>
-            Print summary
-          </Button>
+          <Link
+            href={`/programs/${s.program.id}/summary`}
+            className="whitespace-nowrap rounded-lg border border-border px-3 py-1.5 text-[12px] font-medium text-muted shadow-sm transition-colors hover:border-blueprint hover:text-blueprint print:hidden"
+          >
+            View / print summary
+          </Link>
           <Link href="/" className="whitespace-nowrap text-xs text-blueprint underline print:hidden">
             ← All programs
           </Link>
@@ -124,7 +129,6 @@ export default function ProgramEditor({ programId, currentUserEmail }: { program
               fx={s.country.fx}
               fxFetchedAt={s.country.fxFetchedAt}
               fxSource={s.country.fxSource}
-              annualRevenueUsd={s.program.annualRevenueUsd}
               opexProjection={s.opexProjection}
               opexProjectionYears={s.opexProjectionYears}
               escalationPct={s.program.escalationPct}
@@ -142,20 +146,34 @@ export default function ProgramEditor({ programId, currentUserEmail }: { program
           </div>
         )}
 
-        <ProgramPrintSummary
-          program={s.program}
-          countryName={s.country.name}
-          regionName={s.region?.name ?? null}
-          facilities={s.facilities}
-          report={s.report}
-          currencyCode={s.country.currencyCode}
-          currencySymbol={currencySymbol}
-          fx={s.country.fx}
-          fxFetchedAt={s.country.fxFetchedAt}
-          fxSource={s.country.fxSource}
-          opexProjection={s.opexProjection}
-          opexProjectionYears={s.opexProjectionYears}
-        />
+        {isOwner && (
+          <div className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-clay bg-surface-alt px-4 py-3 print:hidden">
+            <div>
+              <div className="text-[12px] font-semibold text-clay">Danger zone</div>
+              <p className="mt-0.5 text-[11px] text-muted">
+                Permanently deletes this program — every facility inside it, their BOQ and recurring-cost rows, and every
+                collaborator invite. There is no undo.
+              </p>
+            </div>
+            <Button variant="dangerOutline" onClick={() => setShowDeleteModal(true)}>
+              Delete program
+            </Button>
+          </div>
+        )}
+
+        {showDeleteModal && (
+          <ConfirmDeleteModal
+            title={`Delete "${s.program.name}"?`}
+            description={`This permanently deletes the program, all ${s.facilities.length} ${
+              s.facilities.length === 1 ? "facility" : "facilities"
+            } inside it, their full BOQs and recurring-cost rows, and every collaborator invite. This can't be undone.`}
+            confirmText={s.program.name}
+            confirmLabel="Delete program"
+            busy={s.deleteBusy}
+            onConfirm={s.deleteProgram}
+            onCancel={() => setShowDeleteModal(false)}
+          />
+        )}
       </div>
     </AppShell>
   );

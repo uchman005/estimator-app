@@ -23,6 +23,7 @@ export function useProgramEditor(programId: number) {
   const [fxStatus, setFxStatus] = useState("");
   const [fxBusy, setFxBusy] = useState(false);
   const [collaborators, setCollaborators] = useState<CollaboratorRow[]>([]);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const load = useCallback(async () => {
     const [refRes, progRes] = await Promise.all([
@@ -91,6 +92,7 @@ export function useProgramEditor(programId: number) {
               bandHigh: f.cost.bandHigh,
               opex: f.opex,
               isItemizedOpex: f.isItemizedOpex,
+              revenue: f.revenue,
               totalMonths: f.schedule.totalMonths,
             })),
             program.landCostUsd,
@@ -163,6 +165,22 @@ export function useProgramEditor(programId: number) {
     await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
   }
 
+  // Deletes the whole program — every facility under it, each one's BOQ and
+  // opex rows, and every collaborator invite, all cascade at the DB level
+  // (see the onDelete: "cascade" chain in db/schema.ts) off this one
+  // request. Irreversible, owner-only (the API enforces that too — this is
+  // just the UI gate matching it), hence the confirm-by-typing-the-name
+  // modal rather than a plain window.confirm().
+  async function deleteProgram() {
+    setDeleteBusy(true);
+    try {
+      const res = await fetch(`/api/programs/${programId}`, { method: "DELETE" });
+      if (res.ok) router.push("/");
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   async function refreshFx() {
     setFxBusy(true);
     setFxStatus("Fetching…");
@@ -205,9 +223,9 @@ export function useProgramEditor(programId: number) {
 
   return {
     ref, program, facilities, report, opexProjection, opexProjectionYears: OPEX_PROJECTION_YEARS,
-    loading, accessError, role, fxStatus, fxBusy, collaborators, saveStatus,
+    loading, accessError, role, fxStatus, fxBusy, collaborators, saveStatus, deleteBusy,
     country, region, costIndex,
-    patchProgram, saveProgress, addFacility, changeFacilityType, toggleFacilityIncluded, deleteFacility, refreshFx,
+    patchProgram, saveProgress, addFacility, changeFacilityType, toggleFacilityIncluded, deleteFacility, deleteProgram, refreshFx,
     inviteCollaborator, changeCollaboratorRole, removeCollaborator,
   };
 }

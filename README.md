@@ -106,10 +106,10 @@ Location, funding and feasibility all live on the **program**, not the facility:
 - **Location** (`countryId`/`regionId`, and therefore the FX rate and cost index)
   is set once for the whole site and shared by every facility in it.
 - **Funding** — the program's budget — is `programs.fundedUsd`, set on the
-  program (`FundingPanel.tsx`). `landCostUsd`, `escalationPct` and
-  `annualRevenueUsd` are program-level too. Escalation still runs against each
-  facility's *own* schedule length (`computeCost()` in `lib/calc/engine.ts`),
-  it's just one shared rate.
+  program (`FundingPanel.tsx`). `landCostUsd` and `escalationPct` are
+  program-level too. Escalation still runs against each facility's *own*
+  schedule length (`computeCost()` in `lib/calc/engine.ts`), it's just one
+  shared rate.
 - **The feasibility verdict, capital cost, confidence band, operating cost
   and schedule duration are all computed together by one function**,
   `computeProgramReport()` in `lib/calc/engine.ts` — against every
@@ -143,6 +143,15 @@ Location, funding and feasibility all live on the **program**, not the facility:
   `programs.opexOverrideUsd`, when set above 0, replaces the whole computed
   program total outright — see `computeProgramReport()`'s `funding`
   parameter, precomputed by the caller rather than derived internally.
+- **Revenue is itemized per facility too**, the same shape as opex but
+  without a fallback: `project_revenue_items` rows (patient/service fees,
+  pharmacy & lab income, rental/ancillary income, grants — see
+  `RevenueProjectionPanel.tsx`), summed by `computeFacilityRevenue()`. A
+  facility with zero rows is assumed to generate $0 of its own revenue
+  (correct for an ambulance or ICT hub — there's no principled %-of-capex
+  estimate for revenue the way there is for opex). `programs.annualRevenueUsd`,
+  when set above 0, overrides the summed total outright — same "0 = auto"
+  convention as `opexOverrideUsd` above.
 - **Every facility can be toggled in or out of the program's totals**
   (`projects.isIncluded`, default `true`) without deleting it — same "present
   but off" idea as a BOQ addon's own `isIncluded`. Toggled off, a facility's
@@ -231,6 +240,14 @@ to start over.
   native `<fieldset disabled>`, which cascades to every control inside it
   regardless of which component renders it) and, more importantly, server-side on
   every mutating route.
+- **Deleting a program** (owner-only — the "Danger zone" block at the bottom of
+  the program page) is irreversible and total: every facility inside it, their
+  BOQ and recurring-cost rows, and every collaborator invite cascade away in one
+  request (`onDelete: "cascade"` all the way down in `db/schema.ts` — there's
+  nothing a second cleanup step needs to catch). The confirmation is a
+  type-the-program's-name modal (`components/ui/ConfirmDeleteModal.tsx`) rather
+  than a plain `window.confirm()`, given the blast radius is more than the one
+  row being clicked on.
 - Authorization is centralized in `lib/auth/permissions.ts`:
   `requireProgramRole(userId, programId, minRole)` is the gate every
   program-scoped API route calls; `requireFacilityRole(userId, projectId, minRole)`
@@ -357,6 +374,8 @@ instead of repeating hex codes.
 | `/api/projects/:id/generate-building` | POST | (re)generate one BOQ row per UniFormat division from a building template + GFA (`{templateSlug, grossAreaM2, markupPct}`, `markupPct` defaults to 10), replacing any prior generated rows — used from a facility's own page, after creation | editor+ |
 | `/api/projects/:id/opex-items` | POST | add a recurring/operating cost line item (salaries, maintenance, ...) | editor+ |
 | `/api/projects/:id/opex-items/:itemId` | PATCH, DELETE | edit / remove a recurring cost line item | editor+ |
+| `/api/projects/:id/revenue-items` | POST | add a revenue-source line item (patient fees, pharmacy/lab, rental, grants, ...) | editor+ |
+| `/api/projects/:id/revenue-items/:itemId` | PATCH, DELETE | edit / remove a revenue-source line item | editor+ |
 | `/api/reference` | GET | countries+regions+FX, currencies, AACE classes, and the global building templates (with their division rates) | any signed-in user |
 | `/api/reference/countries` | POST | add a country (+ a default "National average" region) | any |
 | `/api/reference/countries/:id` | PATCH, DELETE | edit / remove a country | any |

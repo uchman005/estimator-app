@@ -47,6 +47,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     program: full.program,
     items: full.items,
     opexItems: full.opexItems,
+    revenueItems: full.revenueItems,
     country: full.country,
     region: full.region,
     currency: full.currency,

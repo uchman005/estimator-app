@@ -7,6 +7,7 @@ import {
   computeCost,
   computeSchedule,
   computeFacilityOpex,
+  computeFacilityRevenue,
   computeProgramReport,
   computeOpexProjection,
   type ProjectSettings,
@@ -61,7 +62,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const schedule = computeSchedule(f.items, settings);
     const opex = computeFacilityOpex(f.opexItems, full.program.opexPctOfCapexPerYear, cost.grandTotal);
     const isItemizedOpex = f.opexItems.length > 0;
-    return { project: f.project, items: f.items, opexItems: f.opexItems, cost, schedule, opex, isItemizedOpex };
+    const revenue = computeFacilityRevenue(f.revenueItems);
+    return { project: f.project, items: f.items, opexItems: f.opexItems, revenueItems: f.revenueItems, cost, schedule, opex, isItemizedOpex, revenue };
   }).filter((f): f is NonNullable<typeof f> => f !== null);
 
   const included = facilities.filter((f) => f.project.isIncluded);
@@ -73,6 +75,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       bandHigh: f.cost.bandHigh,
       opex: f.opex,
       isItemizedOpex: f.isItemizedOpex,
+      revenue: f.revenue,
       totalMonths: f.schedule.totalMonths,
     })),
     full.program.landCostUsd,

@@ -189,6 +189,22 @@ export function computeFacilityOpex(items: OpexItemLite[], fallbackPctOfCapex: n
   return items.reduce((sum, it) => (it.isIncluded ? sum + it.annualAmountUsd : sum), 0);
 }
 
+/** A facility's own revenue-source line item — patient fees, pharmacy sales,
+ * rental income, grants, etc. See project_revenue_items in db/schema.ts. */
+export interface RevenueItemLite {
+  annualAmountUsd: number;
+  isIncluded: boolean;
+}
+
+/** Unlike computeFacilityOpex, there's no %-of-capex fallback here — a
+ * facility with no revenue rows just has $0 projected revenue, which is
+ * usually the honest answer (an ambulance or ICT hub doesn't generate its
+ * own revenue; a clinic's revenue has no principled relationship to its
+ * construction cost the way a maintenance-budget estimate does). */
+export function computeFacilityRevenue(items: RevenueItemLite[]): number {
+  return items.reduce((sum, it) => (it.isIncluded ? sum + it.annualAmountUsd : sum), 0);
+}
+
 export type FeasibilityVerdict = "not_feasible" | "conditional_funding" | "conditional_ops" | "feasible";
 
 export interface ProgramFacilityInput {
@@ -197,6 +213,7 @@ export interface ProgramFacilityInput {
   bandHigh: number;
   opex: number; // computeFacilityOpex()'s result for this facility — already itemized-or-fallback
   isItemizedOpex: boolean; // opexItems.length > 0 — whether opex scales with the capex band below, or is a fixed real figure
+  revenue: number; // computeFacilityRevenue()'s result for this facility — this facility's own itemized revenue sources
   totalMonths: number;
 }
 
@@ -218,6 +235,14 @@ export interface ProgramReport {
   opex: number;
   opexBandLow: number;
   opexBandHigh: number;
+
+  // Revenue — the sum of each facility's own itemized revenue sources
+  // (computeFacilityRevenue(), rounded per facility before summing, same
+  // reconciliation principle as capex/opex above), unless the program sets
+  // a flat override via FundingSettings.annualRevenueUsd ("0 = auto" — the
+  // same convention opexOverrideUsd already uses).
+  revenue: number;
+  revenueIsOverridden: boolean;
 
   // Funding coverage — NOT capped at 100%: a program that's over-funded at
   // the point estimate shows `surplus` instead of a hidden `gap` of 0, and
@@ -279,14 +304,18 @@ export function computeProgramReport(
     0
   );
 
+  const facilityRevenueSum = facilities.reduce((s, f) => s + Math.round(f.revenue), 0);
+  const revenueIsOverridden = funding.annualRevenueUsd > 0;
+  const revenue = revenueIsOverridden ? funding.annualRevenueUsd : facilityRevenueSum;
+
   const effectiveOpex = funding.opexOverrideUsd > 0 ? funding.opexOverrideUsd : opex;
   const effectiveOpexAtBandLow = funding.opexOverrideUsd > 0 ? funding.opexOverrideUsd : opexBandHigh; // costlier opex = worse case
   const effectiveOpexAtBandHigh = funding.opexOverrideUsd > 0 ? funding.opexOverrideUsd : opexBandLow; // cheaper opex = better case
 
-  const operatingBalance = funding.annualRevenueUsd - effectiveOpex;
-  const operatingBalanceAtBandLow = funding.annualRevenueUsd - effectiveOpexAtBandLow;
-  const operatingBalanceAtBandHigh = funding.annualRevenueUsd - effectiveOpexAtBandHigh;
-  const sustainabilityRatio = effectiveOpex > 0 ? (funding.annualRevenueUsd / effectiveOpex) * 100 : funding.annualRevenueUsd > 0 ? 100 : 0;
+  const operatingBalance = revenue - effectiveOpex;
+  const operatingBalanceAtBandLow = revenue - effectiveOpexAtBandLow;
+  const operatingBalanceAtBandHigh = revenue - effectiveOpexAtBandHigh;
+  const sustainabilityRatio = effectiveOpex > 0 ? (revenue / effectiveOpex) * 100 : revenue > 0 ? 100 : 0;
 
   const coverage = capex > 0 ? (funding.fundedUsd / capex) * 100 : 0;
   const coverageAtBandHigh = bandHigh > 0 ? (funding.fundedUsd / bandHigh) * 100 : 0;
@@ -306,6 +335,7 @@ export function computeProgramReport(
   return {
     capex, bandLow, bandHigh,
     opex, opexBandLow, opexBandHigh,
+    revenue, revenueIsOverridden,
     coverage, coverageAtBandHigh, gap, gapAtBandHigh, surplus,
     operatingBalance, operatingBalanceAtBandLow, operatingBalanceAtBandHigh, sustainabilityRatio, fundingRunwayYears,
     totalMonthsParallel, totalMonthsSequential,

@@ -281,6 +281,25 @@ export const projectOpexItems = sqliteTable("project_opex_items", {
   notes: text("notes"),
 });
 
+// A facility's own revenue-source line items — patient/service fees,
+// pharmacy sales, rental or ancillary income, grants, etc. Same shape/spirit
+// as project_opex_items, but for the operating-revenue side of the ledger.
+// Unlike opex, there's no %-of-capex fallback: a facility with zero rows
+// here simply has $0 projected revenue, which is usually correct (an
+// ambulance or ICT hub doesn't generate its own revenue) — see
+// computeFacilityRevenue() in lib/calc/engine.ts.
+export const projectRevenueItems = sqliteTable("project_revenue_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  label: text("label").notNull(), // e.g. 'Outpatient consultation fees'
+  category: text("category").notNull().default("other"), // 'patient_fees' | 'pharmacy_lab' | 'rental_ancillary' | 'grants_subsidies' | 'other'
+  annualAmountUsd: real("annual_amount_usd").notNull().default(0),
+  isIncluded: integer("is_included", { mode: "boolean" }).notNull().default(true),
+  notes: text("notes"),
+});
+
 export const scenarios = sqliteTable("scenarios", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   projectId: integer("project_id")

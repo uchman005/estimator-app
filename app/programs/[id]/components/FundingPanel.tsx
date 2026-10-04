@@ -33,16 +33,17 @@ export function FundingPanel({ program, onChange }: { program: ProgramRow; onCha
           onChange={(v) => onChange({ opexPctOfCapexPerYear: v })}
         />
         <NumField
-          label="Annual revenue (USD)"
+          label="Revenue override, USD/yr (0=auto)"
           value={program.annualRevenueUsd}
           onChange={(v) => onChange({ annualRevenueUsd: v })}
         />
       </div>
       <p className="mt-2 text-[10.5px] text-muted">
-        Land, escalation, funding and revenue apply once, across the whole program. Recurring cost is different — each
-        facility totals its own itemized salaries/maintenance/etc. (set on that facility&apos;s own page); the % above is
-        only an estimate for a facility that hasn&apos;t itemized yet. The override above replaces the sum of all of that
-        with one flat program-wide number, if you&apos;d rather set it directly.
+        Land, escalation and funding apply once, across the whole program. Recurring cost and revenue are different —
+        each facility totals its own itemized salaries/maintenance/etc. and its own revenue sources (both set on that
+        facility&apos;s own page); the opex % above is only an estimate for a facility that hasn&apos;t itemized its
+        costs yet. Either override above replaces the sum of all facilities&apos; figures with one flat program-wide
+        number, if you&apos;d rather set it directly.
       </p>
       <p className="mt-1 text-[10.5px] text-muted">
         <b>Proposed / committed funding</b> is what the feasibility verdict (right-hand panel) compares against this

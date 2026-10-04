@@ -76,6 +76,7 @@ export interface FacilityRow {
   // see computeProgramReport()'s own comment for why this matters (a
   // fallback figure scales with the capex confidence band; a real one doesn't).
   isItemizedOpex: boolean;
+  revenue: number; // this facility's own itemized revenue sources — see computeFacilityRevenue()
 }
 
 export interface CollaboratorRow {
