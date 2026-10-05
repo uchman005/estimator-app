@@ -26,6 +26,15 @@
   --color-clay: #dc2626;
   --color-green: #16a34a;
   --color-addon: #7c3aed;
+
+  /* Chart-only categorical palette (CashFlowChart.tsx) — validated for CVD
+     safety against this surface via the dataviz skill's validator script;
+     the app's own UI tokens above weren't picked against that bar (e.g. the
+     dark-mode amber/clay/green fail its lightness-band check), so charts get
+     their own small, separately-validated set rather than reusing them. */
+  --chart-capex: #2a78d6;
+  --chart-opex: #eb6834;
+  --chart-revenue: #1baf7a;
 }
 
 [data-theme="dark"] {
@@ -44,6 +53,10 @@
   --color-clay: #f16565;
   --color-green: #4ade80;
   --color-addon: #a78bfa;
+
+  --chart-capex: #3987e5;
+  --chart-opex: #d95926;
+  --chart-revenue: #199e70;
 }
 
 @theme inline {
@@ -62,6 +75,9 @@
   --color-clay: var(--color-clay);
   --color-green: var(--color-green);
   --color-addon: var(--color-addon);
+  --chart-capex: var(--chart-capex);
+  --chart-opex: var(--chart-opex);
+  --chart-revenue: var(--chart-revenue);
 
   /* legacy aliases so existing bg-paper / border-paper-line / bg-paper-warm /
      bg-paper-flag utility classes keep working without touching every call site */

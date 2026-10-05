@@ -60,6 +60,7 @@ export interface ProjectRow {
   designPermitOverlapPct: number;
   commissionMonths: number;
   startDate: string | null;
+  constructionMonthsOverride: number;
 }
 
 // UniFormat II level-1 divisions — a generated building row is tagged with

@@ -184,6 +184,32 @@ Location, funding and feasibility all live on the **program**, not the facility:
   Relabeling an *existing* facility's type (the compact selector on each row)
   never re-triggers generation — only the creation flow does, since that's
   the one moment an empty facility is unambiguously safe to fill.
+- **Construction duration can be overridden manually** per facility
+  (`projects.constructionMonthsOverride`, `ScheduleAssumptionsPanel.tsx`) —
+  "0 = auto" convention, same as `opexOverrideUsd`/`annualRevenueUsd`. Left
+  at 0, `computeSchedule()` derives it from the BOQ's own critical path as
+  before; set it above 0 and that figure replaces the computed one
+  everywhere downstream (total programme duration, the escalation window in
+  `computeCost()`, and the cash-flow timeline below) — `ScheduleBreakdown`
+  carries `constructionIsOverridden` so the UI can disclose when a figure
+  isn't computed.
+- **Each program has a dedicated, viewable + printable summary page**
+  (`/programs/[id]/summary`, `ProgramSummaryView.tsx`) — a stakeholder-
+  facing report built from the same `useProgramEditor()` data as the editor
+  (no duplicated computation), including a **cash-flow-over-time chart**
+  (`CashFlowChart.tsx`, driven by `computeCashFlowTimeline()` in
+  `lib/calc/engine.ts`): a year-by-year, stacked diverging bar chart —
+  capital spend and operating cost below a zero baseline, revenue above it —
+  so funding timing (not just lump-sum totals) is visible at a glance.
+  Facilities are each assumed to start on day one of the program (the same
+  "parallel build" assumption `totalMonthsParallel` already uses) with
+  capital spend spread evenly across each facility's own construction
+  window; opex/revenue begin accruing once a facility's own schedule
+  completes. Each facility also has its own **operational summary** page
+  (`/projects/[id]/summary`) alongside the original print-only "structural"
+  handout (`FacilityPrintSummary.tsx`, relabeled "Print structural summary"
+  on the editor) — the two are kept deliberately separate and labeled by
+  purpose rather than merged.
 
 `GET /api/programs/:id` returns the program, every facility (all of them,
 regardless of `isIncluded`, each with its own `cost`/`schedule`/`opex`
@@ -278,13 +304,17 @@ lib/
                         delegates to it — see "Programs & facilities" above)
   calc/engine.ts      Pure calculation functions — no DB, no fetch. Per-facility cost/
                       schedule, generateBuildingFromTemplate() (turns a template +
-                      a GFA into one BOQ row per UniFormat division), and the
-                      program-level computeProgramReport() (capex, confidence band,
-                      opex, funding coverage/gap, feasibility verdict, schedule —
-                      all reconciled against each other, see "Programs & facilities"
-                      above) all live here, shared verbatim by API routes (server)
-                      and the editor (client), so there is exactly one implementation
-                      of the math to trust.
+                      a GFA into one BOQ row per UniFormat division),
+                      computeFacilityOpex()/computeFacilityRevenue() (itemized-or-
+                      fallback / itemized-only), the program-level
+                      computeProgramReport() (capex, confidence band, opex, revenue,
+                      funding coverage/gap, feasibility verdict, schedule — all
+                      reconciled against each other, see "Programs & facilities"
+                      above), and computeCashFlowTimeline() (the year-by-year
+                      capex/opex/revenue series behind CashFlowChart.tsx) all live
+                      here, shared verbatim by API routes (server) and the editor
+                      (client), so there is exactly one implementation of the math
+                      to trust.
   data.ts             Drizzle query helpers — getBuildingTemplates() nests each
                       template's divisions; getProgramFull()/getProjectFull()
                       assemble a program's or one facility's raw rows (location
@@ -296,7 +326,8 @@ app/
   api/
     auth/              signup, login, logout, me
     programs/            see table below, all permission-checked
-    projects/            facility-scoped routes (BOQ, building generator) — see table
+    projects/            facility-scoped routes (BOQ, building generator,
+                        opex-items, revenue-items) — see table
   facilities/
     page.tsx + FacilitiesClient.tsx   Every facility across every program you have
                         access to, grouped by program (one collapsible section per
@@ -308,7 +339,10 @@ app/
     useProgramEditor.ts Data-fetching + local state + persistence, as a hook
     components/         CountryRegionPanel, FacilitiesPanel (add a facility, grouped
                         by type), FundingPanel, CollaboratorsPanel,
-                        ProgramSummaryPanel, FeasibilityPanel + types.ts
+                        ProgramSummaryPanel, FeasibilityPanel, CashFlowChart
+                        + types.ts
+    summary/            ProgramSummaryView.tsx — the viewable + printable
+                        program report (see "Programs & facilities" above)
   projects/[id]/
     page.tsx           Server wrapper — redirects to /login if not authenticated
     ProjectEditor.tsx   Thin client orchestrator — no business logic, just wiring;
@@ -320,11 +354,15 @@ app/
                         BuildingCostBreakdownPanel [the RSMeans-style division →
                         Sub-Total → Contractor/Architect Fee → Total layout],
                         SoftCostsPanel, ScheduleAssumptionsPanel, OperatingCostsPanel
-                        [itemized recurring cost — salaries/maintenance/etc, see
-                        project_opex_items below], SummaryPanel, SchedulePanel)
+                        [itemized recurring cost, see project_opex_items below],
+                        RevenueProjectionPanel [itemized revenue sources, see
+                        project_revenue_items below], SummaryPanel, SchedulePanel,
+                        FacilityPrintSummary [the print-only "structural" handout])
                         + types.ts — location, funding, feasibility and
                         collaborators live on the program instead (see
                         app/programs/[id]/components/)
+    summary/            FacilitySummaryView.tsx — the viewable + printable
+                        "operational summary" (see "Programs & facilities" above)
 components/
   AppShell.tsx        The persistent sidebar (Programs, Facilities, user email,
                       sign-out, theme toggle) — wraps every authenticated page
@@ -334,8 +372,9 @@ components/
   AuthForm.tsx        Shared login/signup form UI
   FxStatusPanel.tsx   Dashboard-level global FX status + refresh
   ui/                 Generic, reusable primitives (Panel, Field/Input/Select/NumField,
-                        Button/ClassBadge, Kpi/BreakdownRow/ScheduleBar) used by every
-                        page — the design system, not project-specific
+                        Button/ClassBadge, ConfirmDeleteModal, Kpi/BreakdownRow/
+                        ScheduleBar) used by every page — the design system, not
+                        project-specific
 ```
 
 ## Theme

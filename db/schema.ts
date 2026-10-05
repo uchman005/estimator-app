@@ -191,6 +191,13 @@ export const projects = sqliteTable("projects", {
   designPermitOverlapPct: real("design_permit_overlap_pct").notNull().default(50),
   commissionMonths: real("commission_months").notNull().default(2),
   startDate: text("start_date"),
+  // Manual override for the computed construction duration — 0 = auto
+  // (derived from the BOQ's critical path, see computeSchedule() in
+  // lib/calc/engine.ts), same "0 = auto" convention as opexOverrideUsd and
+  // annualRevenueUsd on programs. Doesn't change escalation's *rate*, but
+  // does change the number of years escalation compounds over, since
+  // computeCost() derives that from schedule.totalMonths.
+  constructionMonthsOverride: real("construction_months_override").notNull().default(0),
 
   createdAt: text("created_at")
     .notNull()

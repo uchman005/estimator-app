@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `construction_months_override` real DEFAULT 0 NOT NULL;

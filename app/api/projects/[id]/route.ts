@@ -23,6 +23,7 @@ function toSettings(full: NonNullable<Awaited<ReturnType<typeof getProjectFull>>
     designMonths: project.designMonths,
     designPermitOverlapPct: project.designPermitOverlapPct,
     commissionMonths: project.commissionMonths,
+    constructionMonthsOverride: project.constructionMonthsOverride,
     costIndex,
   };
 }
@@ -74,7 +75,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     "name", "author", "facilityType", "isIncluded", "aaceClass", "deliveryStrategy",
     "designFeePct", "pmFeePct", "permitFeePct",
     "contingencyPctOverride", "fastTrackPremiumPct", "landMonths", "designMonths",
-    "designPermitOverlapPct", "commissionMonths", "startDate",
+    "designPermitOverlapPct", "commissionMonths", "startDate", "constructionMonthsOverride",
   ];
   const patch: Record<string, unknown> = {};
   for (const key of allowed) if (key in body) patch[key] = body[key];

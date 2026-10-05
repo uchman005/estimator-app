@@ -23,7 +23,19 @@ export function ScheduleAssumptionsPanel({ project, onChange }: { project: Proje
         <Field label="Start date">
           <Input type="date" value={project.startDate ?? ""} onChange={(e) => onChange({ startDate: e.target.value })} />
         </Field>
+        <NumField
+          label="Construction duration override"
+          suffix="mo (0=auto)"
+          value={project.constructionMonthsOverride}
+          onChange={(v) => onChange({ constructionMonthsOverride: v })}
+        />
       </div>
+      {project.constructionMonthsOverride > 0 && (
+        <p className="mt-2 text-[10.5px] text-muted">
+          Construction duration is set manually above instead of being derived from the BOQ&apos;s own critical path.
+          Set it back to 0 to return to the computed estimate.
+        </p>
+      )}
     </Panel>
   );
 }

@@ -57,6 +57,10 @@ export interface ProjectSettings {
   designMonths: number;
   designPermitOverlapPct: number;
   commissionMonths: number;
+  // Manual override for the computed construction duration, in months —
+  // 0 = auto (use the BOQ-derived critical path below). See
+  // projects.constructionMonthsOverride in db/schema.ts.
+  constructionMonthsOverride: number;
   costIndex: number; // resolved: country.baseCostIndex * (1 + region.offsetPct/100)
 }
 
@@ -106,6 +110,9 @@ export interface ScheduleBreakdown {
   constructionMonths: number;
   commissionMonths: number;
   totalMonths: number;
+  // Whether constructionMonths came from the manual override rather than the
+  // BOQ-derived critical path below — see ProjectSettings.constructionMonthsOverride.
+  constructionIsOverridden: boolean;
 }
 
 export function computeSchedule(items: ProjectItemLite[], settings: ProjectSettings): ScheduleBreakdown {
@@ -137,10 +144,13 @@ export function computeSchedule(items: ProjectItemLite[], settings: ProjectSetti
   let constructionMonths = Math.max(siteDur, vertCritical) + 0.3 * Math.min(siteDur, vertCritical);
   constructionMonths = Math.max(constructionMonths, procMax);
 
+  const constructionIsOverridden = settings.constructionMonthsOverride > 0;
+  if (constructionIsOverridden) constructionMonths = settings.constructionMonthsOverride;
+
   const prePhaseMonths = settings.landMonths + settings.designMonths * (1 - settings.designPermitOverlapPct / 100);
   const totalMonths = prePhaseMonths + constructionMonths + settings.commissionMonths;
 
-  return { prePhaseMonths, constructionMonths, commissionMonths: settings.commissionMonths, totalMonths };
+  return { prePhaseMonths, constructionMonths, commissionMonths: settings.commissionMonths, totalMonths, constructionIsOverridden };
 }
 
 export function computeCost(items: ProjectItemLite[], settings: ProjectSettings, aace: AaceClass): CostBreakdown {
@@ -354,6 +364,103 @@ export function computeOpexProjection(annualOpex: number, years: number, inflati
   let total = 0;
   for (let y = 0; y < years; y++) total += annualOpex * Math.pow(1 + inflationPct / 100, y);
   return total;
+}
+
+/** A single facility's inputs to the cash-flow timeline below — just the
+ * four numbers that determine when and how much money moves: its own
+ * capital subtotal, its own schedule (when construction starts/ends, when
+ * it goes operational), and its own steady-state annual opex/revenue. */
+export interface CashFlowFacilityInput {
+  grandTotal: number;
+  schedule: ScheduleBreakdown;
+  opex: number;
+  revenue: number;
+}
+
+export interface CashFlowYear {
+  year: number; // 1-indexed — "Year 1" is the program's first 12 months
+  capexOutflow: number;
+  opexOutflow: number;
+  revenueInflow: number;
+  net: number; // revenueInflow - capexOutflow - opexOutflow
+  cumulativeBalance: number; // running total of net, from year 1
+}
+
+/** Turns the program's capex/opex/revenue totals into a year-by-year timeline
+ * instead of three undated lump sums — the thing none of the other figures on
+ * a program report can show: WHEN money moves, not just how much. Modeled at
+ * monthly resolution internally (so a facility finishing construction
+ * mid-year still splits that year's capex/opex correctly) and bucketed into
+ * years for a readable chart.
+ *
+ * Deliberately simple, stated assumptions rather than invented precision:
+ * - Land is spent in month 1 (acquisition typically happens upfront, and
+ *   there's no finer timing input for it anywhere in the model).
+ * - Each facility's ENTIRE capital subtotal (`grandTotal` — already including
+ *   soft costs, escalation, contingency) is spread evenly across its own
+ *   `constructionMonths`, starting right after its own `prePhaseMonths`
+ *   (land/design/permitting lead time, which isn't separately costed here).
+ * - Every facility is assumed to start on day one of the program (the same
+ *   "parallel build" assumption `totalMonthsParallel` already uses elsewhere
+ *   in this report) — this is a portfolio-level timeline, not a sequencing
+ *   plan.
+ * - Opex and revenue start accruing (at 1/12th the annual rate per month)
+ *   the month a facility's own `totalMonths` (pre-phase + construction +
+ *   commissioning) completes — i.e. once it's operational — and continue for
+ *   the rest of the horizon. Opex compounds at `escalationPct`/yr, the same
+ *   assumption `computeOpexProjection()` already uses; revenue is held flat,
+ *   since no revenue-escalation input exists anywhere in this model. */
+export function computeCashFlowTimeline(
+  facilities: CashFlowFacilityInput[],
+  landCostUsd: number,
+  horizonYears: number,
+  escalationPct: number
+): CashFlowYear[] {
+  const longestTotalMonths = facilities.reduce((max, f) => Math.max(max, f.schedule.totalMonths), 0);
+  const totalMonths = Math.max(12, Math.ceil(longestTotalMonths) + horizonYears * 12);
+
+  const monthlyCapex = new Array(totalMonths).fill(0);
+  const monthlyOpex = new Array(totalMonths).fill(0);
+  const monthlyRevenue = new Array(totalMonths).fill(0);
+
+  if (totalMonths > 0) monthlyCapex[0] += Math.round(landCostUsd);
+
+  for (const f of facilities) {
+    const constructionStart = Math.max(0, Math.round(f.schedule.prePhaseMonths));
+    const constructionMonths = Math.max(1, Math.round(f.schedule.constructionMonths));
+    const perMonthCapex = f.grandTotal / constructionMonths;
+    for (let m = constructionStart; m < constructionStart + constructionMonths && m < totalMonths; m++) {
+      monthlyCapex[m] += perMonthCapex;
+    }
+
+    const operationalFrom = Math.max(0, Math.round(f.schedule.totalMonths));
+    for (let m = operationalFrom; m < totalMonths; m++) {
+      const yearsOperational = Math.floor((m - operationalFrom) / 12);
+      monthlyOpex[m] += (f.opex / 12) * Math.pow(1 + escalationPct / 100, yearsOperational);
+      monthlyRevenue[m] += f.revenue / 12;
+    }
+  }
+
+  const numYears = Math.ceil(totalMonths / 12);
+  const years: CashFlowYear[] = [];
+  let cumulativeBalance = 0;
+  for (let y = 0; y < numYears; y++) {
+    let capexOutflow = 0;
+    let opexOutflow = 0;
+    let revenueInflow = 0;
+    for (let m = y * 12; m < Math.min((y + 1) * 12, totalMonths); m++) {
+      capexOutflow += monthlyCapex[m];
+      opexOutflow += monthlyOpex[m];
+      revenueInflow += monthlyRevenue[m];
+    }
+    capexOutflow = Math.round(capexOutflow);
+    opexOutflow = Math.round(opexOutflow);
+    revenueInflow = Math.round(revenueInflow);
+    const net = revenueInflow - capexOutflow - opexOutflow;
+    cumulativeBalance += net;
+    years.push({ year: y + 1, capexOutflow, opexOutflow, revenueInflow, net, cumulativeBalance });
+  }
+  return years;
 }
 
 /* ---------------------------------------------------------------------- */

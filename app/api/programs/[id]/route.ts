@@ -35,6 +35,7 @@ function toFacilitySettings(
     designMonths: project.designMonths,
     designPermitOverlapPct: project.designPermitOverlapPct,
     commissionMonths: project.commissionMonths,
+    constructionMonthsOverride: project.constructionMonthsOverride,
     costIndex,
   };
 }

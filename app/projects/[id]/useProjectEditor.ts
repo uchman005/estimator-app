@@ -124,6 +124,7 @@ export function useProjectEditor(projectId: number) {
       designMonths: project.designMonths,
       designPermitOverlapPct: project.designPermitOverlapPct,
       commissionMonths: project.commissionMonths,
+      constructionMonthsOverride: project.constructionMonthsOverride,
       costIndex,
     };
   }, [project, program, costIndex]);

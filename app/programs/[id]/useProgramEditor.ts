@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { computeProgramReport, computeOpexProjection } from "@/lib/calc/engine";
+import { computeProgramReport, computeOpexProjection, computeCashFlowTimeline } from "@/lib/calc/engine";
 import { useSaveStatus } from "@/lib/useSaveStatus";
 import type { AddFacilityInput } from "@/components/ui/AddFacilityForm";
 import type { ProgramRow, FacilityRow, ReferenceData, CollaboratorRow } from "./components/types";
@@ -105,6 +105,21 @@ export function useProgramEditor(programId: number) {
   const opexProjection = useMemo(
     () => (program && report ? computeOpexProjection(report.opex, OPEX_PROJECTION_YEARS, program.escalationPct) : 0),
     [report, program]
+  );
+  // Year-by-year capex/opex/revenue timeline — see computeCashFlowTimeline()'s
+  // own comment for its stated assumptions (parallel build, land spent up
+  // front, opex escalating/revenue flat once a facility goes operational).
+  const cashFlow = useMemo(
+    () =>
+      program
+        ? computeCashFlowTimeline(
+            includedFacilities.map((f) => ({ grandTotal: f.cost.grandTotal, schedule: f.schedule, opex: f.opex, revenue: f.revenue })),
+            program.landCostUsd,
+            OPEX_PROJECTION_YEARS,
+            program.escalationPct
+          )
+        : [],
+    [includedFacilities, program]
   );
 
   function patchProgramRequest(patch: Record<string, unknown>) {
@@ -222,7 +237,7 @@ export function useProgramEditor(programId: number) {
   }
 
   return {
-    ref, program, facilities, report, opexProjection, opexProjectionYears: OPEX_PROJECTION_YEARS,
+    ref, program, facilities, report, opexProjection, opexProjectionYears: OPEX_PROJECTION_YEARS, cashFlow,
     loading, accessError, role, fxStatus, fxBusy, collaborators, saveStatus, deleteBusy,
     country, region, costIndex,
     patchProgram, saveProgress, addFacility, changeFacilityType, toggleFacilityIncluded, deleteFacility, deleteProgram, refreshFx,
