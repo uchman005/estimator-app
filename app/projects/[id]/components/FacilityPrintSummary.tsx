@@ -57,7 +57,6 @@ export function FacilityPrintSummary({
         subtitle={`Facility Summary — ${programName}`}
         meta={[
           project.facilityType,
-          `AACE Class ${aace.classNumber}`,
           `${countryName}${regionName ? ` — ${regionName}` : ""}`,
           `cost index ${fmtNum(costIndex)}`,
           `printed ${printedAt}`,
@@ -97,6 +96,13 @@ export function FacilityPrintSummary({
         <PrintRow label="Facility subtotal (USD)" value={fmtUsd(cost.grandTotal)} strong />
         <PrintRow label="Confidence band" value={`${fmtUsd(cost.bandLow)} – ${fmtUsd(cost.bandHigh)}`} />
         <PrintRow label={`Total (${currencyCode})`} value={fmtLocal(cost.grandTotal * fx, currencySymbol)} />
+        <p className="mt-1 text-[9px] text-black/60">
+          Escalation/FX buffer and contingency are different reserves, not duplicates: escalation covers the same
+          scope costing more by the time it&apos;s actually built (today&apos;s rates, inflated over the schedule
+          above); contingency covers how early-stage this estimate still is — design not yet finalized, scope not
+          yet fully known. Both apply on top of the same construction + soft-cost base, which is why each can be large
+          on a long, early-stage estimate.
+        </p>
       </PrintSection>
 
       <PrintSection title="Schedule">

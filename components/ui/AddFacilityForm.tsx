@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Field, Input, Select } from "./Form";
+import { Field, Input, Select, NumberInput } from "./Form";
 import { Button } from "./Button";
 import { FLAT_FACILITY_TYPE_PRESETS } from "@/lib/facilityTypes";
 
@@ -106,10 +106,10 @@ export function AddFacilityForm({
       {selectedTemplate && (
         <>
           <Field label="Gross floor area (m²)">
-            <Input type="number" className="w-28 font-mono" value={gfa} onChange={(e) => setGfa(Number(e.target.value))} />
+            <NumberInput className="w-28 font-mono" value={gfa} onChange={setGfa} />
           </Field>
           <Field label="Buffer (%)">
-            <Input type="number" className="w-20 font-mono" value={markupPct} onChange={(e) => setMarkupPct(Number(e.target.value))} />
+            <NumberInput className="w-20 font-mono" value={markupPct} onChange={setMarkupPct} />
           </Field>
         </>
       )}

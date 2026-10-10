@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Panel } from "@/components/ui/Panel";
-import { Field, Input, Select } from "@/components/ui/Form";
+import { Field, Select, NumberInput } from "@/components/ui/Form";
 import { Button } from "@/components/ui/Button";
 import { fmtNum } from "@/components/ui/Metrics";
 import type { BuildingTemplateRow, BuildingGenInfo } from "./types";
@@ -52,10 +52,10 @@ export function BuildingTemplatePanel({
           </Select>
         </Field>
         <Field label="Gross floor area (m²)">
-          <Input type="number" className="font-mono" value={gfa} onChange={(e) => setGfa(Number(e.target.value))} />
+          <NumberInput className="font-mono" value={gfa} onChange={setGfa} />
         </Field>
         <Field label="Buffer (%)">
-          <Input type="number" className="font-mono" value={markupPct} onChange={(e) => setMarkupPct(Number(e.target.value))} />
+          <NumberInput className="font-mono" value={markupPct} onChange={setMarkupPct} />
         </Field>
       </div>
       {template && (

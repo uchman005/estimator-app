@@ -1,5 +1,5 @@
 import { Panel } from "@/components/ui/Panel";
-import { Input, Select } from "@/components/ui/Form";
+import { Input, Select, NumberInput } from "@/components/ui/Form";
 import { Button } from "@/components/ui/Button";
 import { fmtUsd } from "@/components/ui/Metrics";
 import { REVENUE_CATEGORIES, REVENUE_CATEGORY_LABEL, type RevenueItemRow, type RevenueCategory } from "./types";
@@ -43,11 +43,10 @@ export function RevenueProjectionPanel({
                   </Select>
                 </td>
                 <td className="py-1.5 pr-2 w-32">
-                  <Input
-                    type="number"
+                  <NumberInput
                     className="font-mono text-right"
                     value={it.annualAmountUsd}
-                    onChange={(e) => onChange(it.id, { annualAmountUsd: parseFloat(e.target.value) || 0 })}
+                    onChange={(v) => onChange(it.id, { annualAmountUsd: v })}
                   />
                 </td>
                 <td className="py-1.5 pr-2 w-16 text-center" title="Included in the program total">

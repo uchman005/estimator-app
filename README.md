@@ -97,9 +97,18 @@ A **program** (`programs` table) is a site/campus/portfolio — a 200-bed hospit
 plus several 50–100 bed clinics, housing, a school of nursing, a mortuary, a
 cafeteria, all on one piece of ground. A **facility** (`projects` table — the name
 stuck from before this level existed) is one building inside it, with its own BOQ,
-building template generator, AACE maturity class, soft costs and schedule assumptions.
+building template generator, soft costs and schedule assumptions.
 Every facility belongs to exactly one program (`projects.programId`, `NOT NULL`) —
 there's no such thing as a standalone facility outside a program.
+
+`projects.aaceClass` still exists and still drives `contingencyPct`/the
+confidence band in `computeCost()`, but it's no longer a UI-selectable
+control (there was an `AaceClassPanel.tsx` picker; it's gone) — every
+facility defaults to Class 5 and stays there unless `contingencyPctOverride`
+is set directly (`SoftCostsPanel.tsx`'s "Contingency override" field).
+"AACE Class N" as a label was removed from the UI and from
+`FacilityPrintSummary.tsx`'s header; the underlying classification/
+contingency math is unchanged.
 
 Location, funding and feasibility all live on the **program**, not the facility:
 
@@ -354,7 +363,7 @@ app/
     ProjectEditor.tsx   Thin client orchestrator — no business logic, just wiring;
                         wraps every input in <fieldset disabled={!canEdit}>
     useProjectEditor.ts Data-fetching + local state + persistence, as a hook
-    components/         One file per panel (AaceClassPanel, BuildingTemplatePanel
+    components/         One file per panel (BuildingTemplatePanel
                         [template picker + GFA input + generate], BoqPanel + BoqRow
                         [division/label/qty/unit/rate — every row directly editable],
                         BuildingCostBreakdownPanel [the RSMeans-style division →

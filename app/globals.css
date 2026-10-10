@@ -114,19 +114,7 @@ body {
 /* subtle scrollbar theming so dark mode doesn't show a jarring light scrollbar */
 * { scrollbar-color: var(--color-border) transparent; }
 
-/* Hide the native up/down spinner on every number input app-wide — applied
-   once here rather than per call site, since every numeric field in the app
-   goes through the same <Input type="number"> (components/ui/Form.tsx). */
-input[type="number"] {
-  -moz-appearance: textfield;
-}
-input[type="number"]::-webkit-outer-spin-button,
-input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-/* Print summaries (FacilityPrintSummary.tsx, ProgramPrintSummary.tsx) — the
+/* Print summaries (FacilityPrintSummary.tsx) — the
    rest of the page is marked print:hidden, this is the only thing that
    prints. Plain black-on-white: printers/PDF exports render this far more
    reliably than the themed dark-mode-aware palette the live app uses. */

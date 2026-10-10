@@ -7,7 +7,6 @@ import { fmtNum } from "@/components/ui/Metrics";
 import { SaveStatusBadge } from "@/components/ui/SaveStatusBadge";
 import { Button } from "@/components/ui/Button";
 import { FacilityPrintSummary } from "./components/FacilityPrintSummary";
-import { AaceClassPanel } from "./components/AaceClassPanel";
 import { BuildingTemplatePanel } from "./components/BuildingTemplatePanel";
 import { BuildingCostBreakdownPanel } from "./components/BuildingCostBreakdownPanel";
 import { BoqPanel } from "./components/BoqPanel";
@@ -97,12 +96,6 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
 
         <div className="grid grid-cols-1 items-start gap-5 print:hidden lg:grid-cols-[1.55fr_1fr]">
           <fieldset disabled={!canEdit} className="space-y-5 disabled:opacity-70">
-            <AaceClassPanel
-              classes={s.ref.aaceClasses}
-              selected={s.project.aaceClass}
-              onSelect={(aaceClass, contingencyPct) => s.patchProject({ aaceClass, contingencyPctOverride: contingencyPct })}
-            />
-
             <BuildingTemplatePanel templates={s.ref.buildingTemplates} onGenerate={s.generateBuilding} info={s.genInfo} busy={s.genBusy} />
 
             <BoqPanel

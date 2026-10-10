@@ -40,6 +40,13 @@ export function SummaryPanel({
       <BreakdownRow label="Contingency" value={fmtUsd(cost.contingency)} />
       <BreakdownRow label="Facility subtotal" value={fmtUsd(cost.grandTotal)} strong />
       <p className="mt-2 text-[10.5px] text-muted">
+        <b className="text-ink">Escalation / FX buffer</b> and <b className="text-ink">contingency</b> are different
+        reserves, not duplicates: escalation covers the same scope costing more by the time it&apos;s actually built
+        (today&apos;s rates, inflated over the schedule below) — contingency covers how early-stage this
+        estimate still is, for design and scope that aren&apos;t finalized yet. Both are a % on top of the same
+        construction + soft-cost base, which is why each can be large on a long, early-stage estimate.
+      </p>
+      <p className="mt-2 text-[10.5px] text-muted">
         Land cost, funding and the feasibility verdict are set once for the whole program — see the program page.
       </p>
     </Panel>

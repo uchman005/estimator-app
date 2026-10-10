@@ -1,4 +1,4 @@
-import { Select, Input } from "@/components/ui/Form";
+import { Select, Input, NumberInput } from "@/components/ui/Form";
 import { ClassBadge } from "@/components/ui/Button";
 import { fmtUsd } from "@/components/ui/Metrics";
 import { UNIFORMAT_DIVISIONS, type ItemRow } from "./types";
@@ -38,29 +38,27 @@ export function BoqRow({
         </Select>
       </td>
       <td className="w-20 py-1 pr-2">
-        <Input
-          type="number"
-          step="any"
-          className="font-mono"
-          value={item.quantity}
-          onChange={(e) => onChange({ quantity: parseFloat(e.target.value) || 0 })}
-        />
+        <NumberInput className="font-mono" value={item.quantity} onChange={(v) => onChange({ quantity: v })} />
       </td>
-      <td className="w-20 py-1 pr-2">
-        <Input
-          placeholder="unit"
-          value={item.customUnit ?? ""}
-          onChange={(e) => onChange({ customUnit: e.target.value })}
-        />
+      <td className="w-24 py-1 pr-2">
+        <Select
+          value={item.customUnit === "m²" ? "m2" : "other"}
+          onChange={(e) => onChange({ customUnit: e.target.value === "m2" ? "m²" : "" })}
+        >
+          <option value="m2">m²</option>
+          <option value="other">Other</option>
+        </Select>
+        {item.customUnit !== "m²" && (
+          <Input
+            className="mt-1"
+            placeholder="specify"
+            value={item.customUnit ?? ""}
+            onChange={(e) => onChange({ customUnit: e.target.value })}
+          />
+        )}
       </td>
       <td className="w-28 py-1 pr-2 text-right">
-        <Input
-          type="number"
-          step="any"
-          className="text-right font-mono"
-          value={item.rateUsd}
-          onChange={(e) => onChange({ rateUsd: parseFloat(e.target.value) || 0 })}
-        />
+        <NumberInput className="text-right font-mono" value={item.rateUsd} onChange={(v) => onChange({ rateUsd: v })} />
       </td>
       <td className="py-1 pr-2 text-center">
         <input type="checkbox" checked={item.isAddon} onChange={(e) => onChange({ isAddon: e.target.checked })} />
