@@ -205,7 +205,13 @@ Location, funding and feasibility all live on the **program**, not the facility:
   "parallel build" assumption `totalMonthsParallel` already uses) with
   capital spend spread evenly across each facility's own construction
   window; opex/revenue begin accruing once a facility's own schedule
-  completes. Each facility also has its own **operational summary** page
+  completes. Right below it, a **cumulative cash position chart**
+  (`CashRunwayChart.tsx`) plots the same data's running `cumulativeBalance`
+  as a single trajectory — color (the skill's fixed status green/red pair,
+  not the flow chart's categorical one) and position both carry
+  surplus-vs-deficit, and a computed caption names the year it crosses from
+  one to the other, turning the single `fundingRunwayYears` figure into a
+  visible shape. Each facility also has its own **operational summary** page
   (`/projects/[id]/summary`) alongside the original print-only "structural"
   handout (`FacilityPrintSummary.tsx`, relabeled "Print structural summary"
   on the editor) — the two are kept deliberately separate and labeled by
@@ -339,8 +345,8 @@ app/
     useProgramEditor.ts Data-fetching + local state + persistence, as a hook
     components/         CountryRegionPanel, FacilitiesPanel (add a facility, grouped
                         by type), FundingPanel, CollaboratorsPanel,
-                        ProgramSummaryPanel, FeasibilityPanel, CashFlowChart
-                        + types.ts
+                        ProgramSummaryPanel, FeasibilityPanel, CashFlowChart,
+                        CashRunwayChart + types.ts
     summary/            ProgramSummaryView.tsx — the viewable + printable
                         program report (see "Programs & facilities" above)
   projects/[id]/

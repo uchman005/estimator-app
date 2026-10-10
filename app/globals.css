@@ -35,6 +35,15 @@
   --chart-capex: #2a78d6;
   --chart-opex: #eb6834;
   --chart-revenue: #1baf7a;
+
+  /* Status pair (CashRunwayChart.tsx) — the dataviz skill's fixed, mode-
+     invariant status palette (good/critical), not a themed or categorical
+     color: cumulative cash position being positive vs. negative is a state,
+     not an identity, and these two hexes are documented pre-validated at
+     >=3:1 contrast on both light and dark chart surfaces, so unlike the
+     --chart-capex/opex/revenue trio above there's no separate dark value. */
+  --chart-surplus: #0ca30c;
+  --chart-deficit: #d03b3b;
 }
 
 [data-theme="dark"] {
@@ -78,6 +87,8 @@
   --chart-capex: var(--chart-capex);
   --chart-opex: var(--chart-opex);
   --chart-revenue: var(--chart-revenue);
+  --chart-surplus: var(--chart-surplus);
+  --chart-deficit: var(--chart-deficit);
 
   /* legacy aliases so existing bg-paper / border-paper-line / bg-paper-warm /
      bg-paper-flag utility classes keep working without touching every call site */

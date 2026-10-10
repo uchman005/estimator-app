@@ -19,6 +19,7 @@ import {
 import { isLiveFxRate } from "@/lib/fx";
 import { VERDICT_COPY } from "../components/FeasibilityPanel";
 import { CashFlowChart } from "../components/CashFlowChart";
+import { CashRunwayChart } from "../components/CashRunwayChart";
 
 // The viewable + printable program summary — everything a stakeholder needs
 // in one read-only page: facility-by-facility cost/opex/duration, the
@@ -215,6 +216,7 @@ export default function ProgramSummaryView({ programId, currentUserEmail }: { pr
           </Panel>
 
           <CashFlowChart years={s.cashFlow} />
+          <CashRunwayChart years={s.cashFlow} />
 
           <Panel title={`${s.opexProjectionYears}-YEAR OPERATING OUTLOOK`}>
             <BreakdownRow
