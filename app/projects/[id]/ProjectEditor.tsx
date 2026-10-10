@@ -108,7 +108,7 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
               onAddItem={s.addItem}
             />
 
-            <SoftCostsPanel project={s.project} onChange={s.patchProject} />
+            <SoftCostsPanel project={s.project} aaceClasses={s.ref.aaceClasses} onChange={s.patchProject} />
             <ScheduleAssumptionsPanel project={s.project} onChange={s.patchProject} />
 
             <OperatingCostsPanel

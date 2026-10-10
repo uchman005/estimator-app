@@ -1,8 +1,19 @@
 import { Panel } from "@/components/ui/Panel";
 import { Field, NumField, Select } from "@/components/ui/Form";
+import { fmtNum } from "@/components/ui/Metrics";
+import type { AaceClass } from "@/lib/calc/engine";
 import type { ProjectRow } from "./types";
 
-export function SoftCostsPanel({ project, onChange }: { project: ProjectRow; onChange: (patch: Partial<ProjectRow>) => void }) {
+export function SoftCostsPanel({
+  project,
+  aaceClasses,
+  onChange,
+}: {
+  project: ProjectRow;
+  aaceClasses: AaceClass[];
+  onChange: (patch: Partial<ProjectRow>) => void;
+}) {
+  const currentClass = aaceClasses.find((c) => c.classNumber === project.aaceClass);
   return (
     <Panel title="05 — CONTRACTOR &amp; ARCHITECT FEES, DELIVERY">
       <p className="mb-2 text-[11.5px] text-muted">
@@ -22,12 +33,18 @@ export function SoftCostsPanel({ project, onChange }: { project: ProjectRow; onC
             <option value="parallel">Fast-tracked (+cost)</option>
           </Select>
         </Field>
-        <NumField
-          label="Contingency override"
-          suffix="%"
-          value={project.contingencyPctOverride ?? 0}
-          onChange={(v) => onChange({ contingencyPctOverride: v })}
-        />
+        <Field label="Contingency level">
+          <Select
+            value={project.aaceClass}
+            onChange={(e) => onChange({ aaceClass: Number(e.target.value), contingencyPctOverride: null })}
+          >
+            {aaceClasses.map((c) => (
+              <option key={c.classNumber} value={c.classNumber}>
+                {fmtNum(c.contingencyPct)}% contingency ({fmtNum(c.bandLowPct)}% / +{fmtNum(c.bandHighPct)}%)
+              </option>
+            ))}
+          </Select>
+        </Field>
         <NumField
           label="Fast-track premium"
           suffix="%"
@@ -35,6 +52,7 @@ export function SoftCostsPanel({ project, onChange }: { project: ProjectRow; onC
           onChange={(v) => onChange({ fastTrackPremiumPct: v })}
         />
       </div>
+      {currentClass && <p className="mt-2 text-[10.5px] text-muted">{currentClass.description}</p>}
     </Panel>
   );
 }

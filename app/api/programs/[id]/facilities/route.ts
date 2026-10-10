@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       programId,
       facilityType,
       name: body.name || "Untitled facility",
-      aaceClass: body.aaceClass ?? 5,
+      aaceClass: body.aaceClass ?? 3,
     })
     .returning();
 

@@ -175,7 +175,10 @@ export const projects = sqliteTable("projects", {
   // project_items.isIncluded, one level up. Lets you ask "does this program
   // still pencil out without the school of nursing" live.
   isIncluded: integer("is_included", { mode: "boolean" }).notNull().default(true),
-  aaceClass: integer("aace_class").notNull().default(5),
+  // Default Class 3 (preliminary design / budget-authorization maturity) —
+  // no longer a user-facing picker (see SoftCostsPanel.tsx's "Contingency
+  // level" select), just the starting point every facility gets.
+  aaceClass: integer("aace_class").notNull().default(3),
   deliveryStrategy: text("delivery_strategy").notNull().default("phased"), // 'phased' | 'parallel'
 
   // soft costs & risk (percentages stored as e.g. 8 for 8%)

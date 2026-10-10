@@ -102,13 +102,18 @@ Every facility belongs to exactly one program (`projects.programId`, `NOT NULL`)
 there's no such thing as a standalone facility outside a program.
 
 `projects.aaceClass` still exists and still drives `contingencyPct`/the
-confidence band in `computeCost()`, but it's no longer a UI-selectable
-control (there was an `AaceClassPanel.tsx` picker; it's gone) — every
-facility defaults to Class 5 and stays there unless `contingencyPctOverride`
-is set directly (`SoftCostsPanel.tsx`'s "Contingency override" field).
-"AACE Class N" as a label was removed from the UI and from
-`FacilityPrintSummary.tsx`'s header; the underlying classification/
-contingency math is unchanged.
+confidence band in `computeCost()`, and still defaults to a real class —
+Class 3 (preliminary design / budget-authorization maturity) — but "AACE
+Class N" as a jargon label is gone from the UI and from
+`FacilityPrintSummary.tsx`'s header, and there's no longer a dedicated
+picker panel (the old `AaceClassPanel.tsx` is gone). Instead,
+`SoftCostsPanel.tsx`'s **"Contingency level"** select picks among the same 5
+classes' own contingency %/confidence-band pairs (15% / −20%+30%, etc.,
+labeled by the numbers rather than the class name) — choosing one sets
+`aaceClass` directly and clears any stray `contingencyPctOverride`, so the
+contingency amount and the confidence band shown elsewhere always agree.
+There's no free-form contingency-% entry anymore; the 5 classes are the only
+contingency levels on offer.
 
 Location, funding and feasibility all live on the **program**, not the facility:
 
