@@ -11,6 +11,7 @@ export function BoqPanel({
   costIndex,
   coreSubtotal,
   addonSubtotal,
+  sectionNumber,
   onChangeItem,
   onDeleteItem,
   onAddItem,
@@ -19,12 +20,13 @@ export function BoqPanel({
   costIndex: number;
   coreSubtotal: number;
   addonSubtotal: number;
+  sectionNumber: number;
   onChangeItem: (id: number, patch: Partial<ItemRow>) => void;
   onDeleteItem: (id: number) => void;
   onAddItem: () => void;
 }) {
   return (
-    <Panel title="04 — BILL OF QUANTITIES (UniFormat II classified)">
+    <Panel title={`${String(sectionNumber).padStart(2, "0")} — BILL OF QUANTITIES (UniFormat II classified)`}>
       <p className="mb-2 text-[11.5px] text-muted">
         Generated building-division rows (from the template below) and flat-priced items (vehicles, equipment) live side by
         side here — every row is just quantity × rate. Addon items can be switched off without deleting them.

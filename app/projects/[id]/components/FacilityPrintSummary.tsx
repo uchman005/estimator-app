@@ -44,9 +44,6 @@ export function FacilityPrintSummary({
   const generatedRows = items.filter((it) => it.isIncluded && it.customUnifCode && /^[A-G]$/.test(it.customUnifCode));
   const isBuilding = generatedRows.length > 0 && buildingGfaM2 != null;
   const totalConstruction = cost.coreConstruction + cost.addonConstruction;
-  const architectFee = totalConstruction * (project.designFeePct / 100);
-  const contractorFee = totalConstruction * (project.pmFeePct / 100);
-  const permitFee = totalConstruction * (project.permitFeePct / 100);
 
   const printedAt = new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 
@@ -76,10 +73,13 @@ export function FacilityPrintSummary({
           />
           <div className="mt-1">
             <PrintRow label="Sub-total (construction)" value={fmtUsd(totalConstruction)} strong />
-            <PrintRow label={`Contractor fee (${fmtNum(project.pmFeePct)}%)`} value={fmtUsd(contractorFee)} />
-            <PrintRow label={`Architect fee (${fmtNum(project.designFeePct)}%)`} value={fmtUsd(architectFee)} />
-            <PrintRow label={`Permitting (${fmtNum(project.permitFeePct)}%)`} value={fmtUsd(permitFee)} />
-            <PrintRow label="Total building cost" value={fmtUsd(totalConstruction + architectFee + contractorFee + permitFee)} strong />
+            <PrintRow label={`General contractor cost (${fmtNum(project.pmFeePct)}%)`} value={fmtUsd(cost.generalContractorCost)} />
+            <PrintRow label={`Sub-contractor markup (${fmtNum(project.subContractorMarkupPct)}%)`} value={fmtUsd(cost.subContractorMarkup)} />
+            <PrintRow label={`Mobilization fee (${fmtNum(project.mobilizationFeePct)}%)`} value={fmtUsd(cost.mobilizationFee)} />
+            <PrintRow label={`Contractor profit (${fmtNum(project.contractorProfitPct)}%)`} value={fmtUsd(cost.contractorProfit)} />
+            <PrintRow label={`Architect / engineer fee (${fmtNum(project.designFeePct)}%)`} value={fmtUsd(cost.architectEngineerFee)} />
+            <PrintRow label={`Permitting fee (${fmtNum(project.permitFeePct)}%)`} value={fmtUsd(cost.permittingFee)} />
+            <PrintRow label="Total building cost" value={fmtUsd(cost.grandTotal)} strong />
             <PrintRow label="Gross floor area" value={`${fmtNum(buildingGfaM2!)} m²`} />
             <PrintRow label="All-in cost per m²" value={`${fmtUsd(cost.grandTotal / buildingGfaM2!)}/m²`} />
           </div>
@@ -93,6 +93,16 @@ export function FacilityPrintSummary({
         <PrintRow label="Escalation / FX buffer" value={fmtUsd(cost.escalation)} />
         <PrintRow label="Fast-track premium" value={fmtUsd(cost.fastTrackPremium)} />
         <PrintRow label={`Contingency (${fmtNum(project.contingencyPctOverride ?? aace.contingencyPct)}%)`} value={fmtUsd(cost.contingency)} />
+        {cost.commissioningFee > 0 && (
+          <PrintRow label={`Commissioning fee (${fmtNum(project.commissioningFeePct)}%)`} value={fmtUsd(cost.commissioningFee)} />
+        )}
+        {cost.constructionQc > 0 && (
+          <PrintRow label={`Construction quality control (${fmtNum(project.constructionQcPct)}%)`} value={fmtUsd(cost.constructionQc)} />
+        )}
+        {cost.hospitalEquipmentCost > 0 && <PrintRow label="Hospital equipment" value={fmtUsd(cost.hospitalEquipmentCost)} />}
+        {cost.hospitalEquipmentCommissioning > 0 && (
+          <PrintRow label="Equipment commissioning" value={fmtUsd(cost.hospitalEquipmentCommissioning)} />
+        )}
         <PrintRow label="Facility subtotal (USD)" value={fmtUsd(cost.grandTotal)} strong />
         <PrintRow label="Confidence band" value={`${fmtUsd(cost.bandLow)} – ${fmtUsd(cost.bandHigh)}`} />
         <PrintRow label={`Total (${currencyCode})`} value={fmtLocal(cost.grandTotal * fx, currencySymbol)} />

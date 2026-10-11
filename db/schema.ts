@@ -182,11 +182,21 @@ export const projects = sqliteTable("projects", {
   deliveryStrategy: text("delivery_strategy").notNull().default("phased"), // 'phased' | 'parallel'
 
   // soft costs & risk (percentages stored as e.g. 8 for 8%)
-  designFeePct: real("design_fee_pct").notNull().default(8),
-  pmFeePct: real("pm_fee_pct").notNull().default(6),
-  permitFeePct: real("permit_fee_pct").notNull().default(2),
+  designFeePct: real("design_fee_pct").notNull().default(8), // "Architect / engineer fee" in the UI
+  pmFeePct: real("pm_fee_pct").notNull().default(6), // "General contractor cost" in the UI
+  permitFeePct: real("permit_fee_pct").notNull().default(2), // "Permitting fee" in the UI
   contingencyPctOverride: real("contingency_pct_override"),
   fastTrackPremiumPct: real("fast_track_premium_pct").notNull().default(12),
+
+  // Building-only general-contractor cost buildup (see GeneralContractorPanel.tsx
+  // and computeCost() in lib/calc/engine.ts) — all 0 contribution for a
+  // flat/vehicle facility (no A-G BOQ rows), so these are harmless to carry
+  // on every facility rather than needing a separate table.
+  subContractorMarkupPct: real("sub_contractor_markup_pct").notNull().default(0),
+  mobilizationFeePct: real("mobilization_fee_pct").notNull().default(0),
+  contractorProfitPct: real("contractor_profit_pct").notNull().default(20),
+  commissioningFeePct: real("commissioning_fee_pct").notNull().default(2),
+  constructionQcPct: real("construction_qc_pct").notNull().default(5),
 
   // schedule assumptions
   landMonths: real("land_months").notNull().default(4),
@@ -268,7 +278,7 @@ export const buildingTemplateDivisions = sqliteTable("building_template_division
     .notNull()
     .references(() => buildingTemplates.id, { onDelete: "cascade" }),
   divisionCode: text("division_code").notNull(), // UniFormat level-1: 'A'..'G'
-  divisionName: text("division_name").notNull(), // 'Shell', 'Services', ...
+  divisionName: text("division_name").notNull(), // 'Shell', 'Mechanical, Electrical & Plumbing (MEP)', ...
   baseRateUsdPerM2: real("base_rate_usd_per_m2").notNull().default(0),
   sortOrder: integer("sort_order").notNull().default(0),
 });
@@ -306,6 +316,27 @@ export const projectRevenueItems = sqliteTable("project_revenue_items", {
   label: text("label").notNull(), // e.g. 'Outpatient consultation fees'
   category: text("category").notNull().default("other"), // 'patient_fees' | 'pharmacy_lab' | 'rental_ancillary' | 'grants_subsidies' | 'other'
   annualAmountUsd: real("annual_amount_usd").notNull().default(0),
+  isIncluded: integer("is_included", { mode: "boolean" }).notNull().default(true),
+  notes: text("notes"),
+});
+
+// A hospital-type facility's own itemized medical-equipment line items —
+// MRI scanner, sterilizer, etc. Capex, not opex: each row's own cost plus
+// its own commissioning % (installation/testing, as a % of that row's own
+// cost — distinct from the facility-wide Commissioning Fee in the general-
+// contractor buildup, which applies to the building works, not equipment)
+// adds straight onto the facility's grandTotal — see computeCost() in
+// lib/calc/engine.ts. Only shown/edited for a hospital-type facility (see
+// isHospitalFacility() in lib/facilityTypes.ts) but harmless to carry the
+// table for any facility — a flat/vehicle facility simply never gets rows.
+export const projectHospitalEquipment = sqliteTable("project_hospital_equipment", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  projectId: integer("project_id")
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  label: text("label").notNull(), // e.g. 'MRI scanner'
+  costUsd: real("cost_usd").notNull().default(0),
+  commissioningPct: real("commissioning_pct").notNull().default(0),
   isIncluded: integer("is_included", { mode: "boolean" }).notNull().default(true),
   notes: text("notes"),
 });

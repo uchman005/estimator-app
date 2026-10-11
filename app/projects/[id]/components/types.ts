@@ -55,6 +55,11 @@ export interface ProjectRow {
   permitFeePct: number;
   contingencyPctOverride: number | null;
   fastTrackPremiumPct: number;
+  subContractorMarkupPct: number;
+  mobilizationFeePct: number;
+  contractorProfitPct: number;
+  commissioningFeePct: number;
+  constructionQcPct: number;
   landMonths: number;
   designMonths: number;
   designPermitOverlapPct: number;
@@ -69,10 +74,10 @@ export const UNIFORMAT_DIVISIONS: { code: string; name: string }[] = [
   { code: "A", name: "Substructure" },
   { code: "B", name: "Shell" },
   { code: "C", name: "Interiors" },
-  { code: "D", name: "Services" },
+  { code: "D", name: "Mechanical, Electrical & Plumbing (MEP)" },
   { code: "E", name: "Equipment & Furnishings" },
   { code: "F", name: "Special Construction" },
-  { code: "G", name: "Building Sitework" },
+  { code: "G", name: "Site Development & Utilities" },
   { code: "Z", name: "Other / Equipment / Vehicles" },
 ];
 
@@ -121,6 +126,15 @@ export interface RevenueItemRow {
   label: string;
   category: RevenueCategory;
   annualAmountUsd: number;
+  isIncluded: boolean;
+  notes: string | null;
+}
+
+export interface HospitalEquipmentItemRow {
+  id: number;
+  label: string;
+  costUsd: number;
+  commissioningPct: number;
   isIncluded: boolean;
   notes: string | null;
 }

@@ -7,11 +7,13 @@ import type { BuildingTemplateRow, BuildingGenInfo } from "./types";
 
 export function BuildingTemplatePanel({
   templates,
+  sectionNumber,
   onGenerate,
   info,
   busy,
 }: {
   templates: BuildingTemplateRow[];
+  sectionNumber: number;
   onGenerate: (input: { templateSlug: string; grossAreaM2: number; markupPct: number }) => void;
   info: BuildingGenInfo | null;
   busy: boolean;
@@ -29,7 +31,7 @@ export function BuildingTemplatePanel({
   }, [templates, slug]);
 
   return (
-    <Panel title="03 — BUILDING TEMPLATE" accent>
+    <Panel title={`${String(sectionNumber).padStart(2, "0")} — BUILDING TEMPLATE`} accent>
       <p className="mb-2 text-[11.5px] text-muted">
         Modeled square-meter cost estimating: pick a template, set the gross floor area, and generate one BOQ line per
         UniFormat division (A–G) at that division&apos;s $/m² rate × GFA — see the breakdown in the summary panel.

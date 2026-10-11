@@ -47,12 +47,20 @@ export interface AaceClass {
 export interface ProjectSettings {
   aaceClass: number;
   deliveryStrategy: Strategy;
-  designFeePct: number; // "Architect fee" in the UI — see SoftCostsPanel.tsx
-  pmFeePct: number; // "Contractor fee (overhead & profit)" in the UI
-  permitFeePct: number;
+  designFeePct: number; // "Architect / engineer fee" in the UI — see SoftCostsPanel.tsx
+  pmFeePct: number; // "General contractor cost" in the UI
+  permitFeePct: number; // "Permitting fee" in the UI
   escalationPct: number;
   contingencyPctOverride: number | null;
   fastTrackPremiumPct: number;
+  // Building-only general-contractor buildup — zero contribution for a
+  // flat/vehicle facility, see computeCost()'s `isBuilding` branch below and
+  // GeneralContractorPanel.tsx for the UI these four feed.
+  subContractorMarkupPct: number;
+  mobilizationFeePct: number;
+  contractorProfitPct: number;
+  commissioningFeePct: number;
+  constructionQcPct: number;
   landMonths: number;
   designMonths: number;
   designPermitOverlapPct: number;
@@ -83,6 +91,14 @@ export interface OpexItemLite {
   isIncluded: boolean;
 }
 
+/** One hospital-type facility's own medical-equipment line item — MRI
+ * scanner, sterilizer, etc. See project_hospital_equipment in db/schema.ts. */
+export interface HospitalEquipmentItemLite {
+  costUsd: number;
+  commissioningPct: number;
+  isIncluded: boolean;
+}
+
 export function rowUnitRate(item: ProjectItemLite): number {
   return item.rateUsd;
 }
@@ -96,10 +112,34 @@ export interface CostBreakdown {
   coreConstruction: number;
   addonConstruction: number;
   totalConstruction: number;
-  softCosts: number;
+
+  // The six fee lines that make up softCosts below. The first three apply
+  // to every facility; the last three (and contractorProfit, which also
+  // factors them in) are building-only — see computeCost()'s `isBuilding`
+  // branch — and sit at 0 for a flat/vehicle facility.
+  architectEngineerFee: number;
+  generalContractorCost: number;
+  permittingFee: number;
+  subContractorMarkup: number;
+  mobilizationFee: number;
+  contractorProfit: number;
+  softCosts: number; // sum of the six fee lines above
+
   escalation: number;
   fastTrackPremium: number;
+  // totalConstruction + softCosts + escalation + fastTrackPremium — the
+  // base contingency and the commissioning fee below are both a % of.
+  buildingCostSubtotal: number;
   contingency: number;
+  commissioningFee: number; // building-only
+  constructionQc: number; // building-only — % of everything above, applied last
+
+  // Hospital-only medical equipment — added straight onto grandTotal, not
+  // run through any of the general-contractor buildup above (no fees, no
+  // escalation, no contingency on it) — see project_hospital_equipment.
+  hospitalEquipmentCost: number;
+  hospitalEquipmentCommissioning: number;
+
   grandTotal: number; // this facility's own subtotal — no land, see computeProgramCapex
   bandLow: number;
   bandHigh: number;
@@ -153,7 +193,12 @@ export function computeSchedule(items: ProjectItemLite[], settings: ProjectSetti
   return { prePhaseMonths, constructionMonths, commissionMonths: settings.commissionMonths, totalMonths, constructionIsOverridden };
 }
 
-export function computeCost(items: ProjectItemLite[], settings: ProjectSettings, aace: AaceClass): CostBreakdown {
+export function computeCost(
+  items: ProjectItemLite[],
+  settings: ProjectSettings,
+  aace: AaceClass,
+  hospitalEquipment: HospitalEquipmentItemLite[] = []
+): CostBreakdown {
   let coreConstruction = 0;
   let addonConstruction = 0;
   for (const item of items) {
@@ -163,10 +208,28 @@ export function computeCost(items: ProjectItemLite[], settings: ProjectSettings,
     else coreConstruction += cost;
   }
   const totalConstruction = coreConstruction + addonConstruction;
-  // designFeePct/pmFeePct/permitFeePct together are the RSMeans-style
-  // "Contractor Fees + Architect Fee" layer on top of the sub-total — see
-  // SoftCostsPanel.tsx for the labels.
-  const softCosts = totalConstruction * ((settings.designFeePct + settings.pmFeePct + settings.permitFeePct) / 100);
+
+  // A-G are the building-division codes the generator assigns — only a
+  // generated building gets the general-contractor buildup below (sub-
+  // contractor markup, mobilization, contractor profit, commissioning fee,
+  // construction QC); a flat/vehicle facility (a Z-coded custom row) keeps
+  // the simpler architect/GC/permitting-only fee layer it always had.
+  const isBuilding = items.some((it) => it.isIncluded && it.customUnifCode && /^[A-G]$/.test(it.customUnifCode));
+
+  const architectEngineerFee = totalConstruction * (settings.designFeePct / 100);
+  const generalContractorCost = totalConstruction * (settings.pmFeePct / 100);
+  const permittingFee = totalConstruction * (settings.permitFeePct / 100);
+  const subContractorMarkup = isBuilding ? totalConstruction * (settings.subContractorMarkupPct / 100) : 0;
+  const mobilizationFee = isBuilding ? totalConstruction * (settings.mobilizationFeePct / 100) : 0;
+  // Contractor Profit is a margin on top of the sub-contractor total PLUS
+  // every fee/markup line that's itself a cost to the contractor to carry
+  // (general contractor cost, sub-contractor markup, mobilization) — not on
+  // architect fees or permitting, which aren't the contractor's own cost.
+  const contractorProfit = isBuilding
+    ? (totalConstruction + subContractorMarkup + generalContractorCost + mobilizationFee) * (settings.contractorProfitPct / 100)
+    : 0;
+
+  const softCosts = architectEngineerFee + generalContractorCost + permittingFee + subContractorMarkup + mobilizationFee + contractorProfit;
 
   const schedule = computeSchedule(items, settings);
   const years = schedule.totalMonths / 12;
@@ -174,14 +237,52 @@ export function computeCost(items: ProjectItemLite[], settings: ProjectSettings,
   const escalation = escalationBase * (Math.pow(1 + settings.escalationPct / 100, years) - 1);
   const fastTrackPremium = settings.deliveryStrategy === "parallel" ? totalConstruction * (settings.fastTrackPremiumPct / 100) : 0;
 
-  const contingencyPct = (settings.contingencyPctOverride ?? aace.contingencyPct) / 100;
-  const contingency = (totalConstruction + softCosts + escalation + fastTrackPremium) * contingencyPct;
+  const buildingCostSubtotal = totalConstruction + softCosts + escalation + fastTrackPremium;
 
-  const grandTotal = totalConstruction + softCosts + escalation + fastTrackPremium + contingency;
+  const contingencyPct = (settings.contingencyPctOverride ?? aace.contingencyPct) / 100;
+  const contingency = buildingCostSubtotal * contingencyPct;
+  const commissioningFee = isBuilding ? buildingCostSubtotal * (settings.commissioningFeePct / 100) : 0;
+
+  const subtotalBeforeQc = buildingCostSubtotal + contingency + commissioningFee;
+  const constructionQc = isBuilding ? subtotalBeforeQc * (settings.constructionQcPct / 100) : 0;
+  const preEquipmentTotal = subtotalBeforeQc + constructionQc;
+
+  // Medical equipment is a separate procurement line, not building works —
+  // it doesn't run through the general-contractor buildup above (no
+  // architect/contractor fee, no escalation, no contingency on it), just
+  // its own cost plus its own commissioning % added straight on at the end.
+  // See project_hospital_equipment in db/schema.ts.
+  const includedEquipment = hospitalEquipment.filter((e) => e.isIncluded);
+  const hospitalEquipmentCost = includedEquipment.reduce((s, e) => s + e.costUsd, 0);
+  const hospitalEquipmentCommissioning = includedEquipment.reduce((s, e) => s + e.costUsd * (e.commissioningPct / 100), 0);
+
+  const grandTotal = preEquipmentTotal + hospitalEquipmentCost + hospitalEquipmentCommissioning;
   const bandLow = grandTotal * (1 + aace.bandLowPct / 100);
   const bandHigh = grandTotal * (1 + aace.bandHighPct / 100);
 
-  return { coreConstruction, addonConstruction, totalConstruction, softCosts, escalation, fastTrackPremium, contingency, grandTotal, bandLow, bandHigh };
+  return {
+    coreConstruction,
+    addonConstruction,
+    totalConstruction,
+    architectEngineerFee,
+    generalContractorCost,
+    permittingFee,
+    subContractorMarkup,
+    mobilizationFee,
+    contractorProfit,
+    softCosts,
+    escalation,
+    fastTrackPremium,
+    buildingCostSubtotal,
+    contingency,
+    commissioningFee,
+    constructionQc,
+    hospitalEquipmentCost,
+    hospitalEquipmentCommissioning,
+    grandTotal,
+    bandLow,
+    bandHigh,
+  };
 }
 
 /** One facility's own annual recurring/operating cost: the sum of its own

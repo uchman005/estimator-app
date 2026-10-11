@@ -11,11 +11,14 @@ import { BuildingTemplatePanel } from "./components/BuildingTemplatePanel";
 import { BuildingCostBreakdownPanel } from "./components/BuildingCostBreakdownPanel";
 import { BoqPanel } from "./components/BoqPanel";
 import { SoftCostsPanel } from "./components/SoftCostsPanel";
+import { GeneralContractorPanel } from "./components/GeneralContractorPanel";
 import { ScheduleAssumptionsPanel } from "./components/ScheduleAssumptionsPanel";
 import { OperatingCostsPanel } from "./components/OperatingCostsPanel";
 import { RevenueProjectionPanel } from "./components/RevenueProjectionPanel";
+import { HospitalEquipmentPanel } from "./components/HospitalEquipmentPanel";
 import { SummaryPanel } from "./components/SummaryPanel";
 import { SchedulePanel } from "./components/SchedulePanel";
+import { isHospitalFacility } from "@/lib/facilityTypes";
 
 export default function ProjectEditor({ projectId, currentUserEmail }: { projectId: number; currentUserEmail: string }) {
   const s = useProjectEditor(projectId);
@@ -45,6 +48,23 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
 
   const currencySymbol = s.ref.currencies.find((c) => c.code === s.country?.currencyCode)?.symbol;
   const canEdit = s.role === "owner" || s.role === "editor";
+  const isBuilding = s.buildingGfaM2 != null;
+  const isHospital = isHospitalFacility(s.project.facilityType);
+  // Sequential, gap-free section numbers for whichever panels actually
+  // render below — the General Contractor panel only exists for a
+  // building, so it only consumes a number (and only shifts the rest down
+  // by one) when it's actually on screen, instead of leaving a numbering
+  // gap for flat/vehicle facilities that never see it.
+  let sectionCounter = 0;
+  const nextSection = () => ++sectionCounter;
+  const sBuildingTemplate = nextSection();
+  const sBoq = nextSection();
+  const sSoftCosts = nextSection();
+  const sGeneralContractor = isBuilding ? nextSection() : null;
+  const sSchedule = nextSection();
+  const sOperatingCosts = nextSection();
+  const sRevenue = nextSection();
+  const sEquipment = isHospital ? nextSection() : null;
 
   return (
     <AppShell email={currentUserEmail}>
@@ -96,25 +116,49 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
 
         <div className="grid grid-cols-1 items-start gap-5 print:hidden lg:grid-cols-[1.55fr_1fr]">
           <fieldset disabled={!canEdit} className="space-y-5 disabled:opacity-70">
-            <BuildingTemplatePanel templates={s.ref.buildingTemplates} onGenerate={s.generateBuilding} info={s.genInfo} busy={s.genBusy} />
+            <BuildingTemplatePanel
+              templates={s.ref.buildingTemplates}
+              sectionNumber={sBuildingTemplate}
+              onGenerate={s.generateBuilding}
+              info={s.genInfo}
+              busy={s.genBusy}
+            />
 
             <BoqPanel
               items={s.items}
               costIndex={s.costIndex}
               coreSubtotal={s.cost.coreConstruction}
               addonSubtotal={s.cost.addonConstruction}
+              sectionNumber={sBoq}
               onChangeItem={s.patchItem}
               onDeleteItem={s.deleteItem}
               onAddItem={s.addItem}
             />
 
-            <SoftCostsPanel project={s.project} aaceClasses={s.ref.aaceClasses} onChange={s.patchProject} />
-            <ScheduleAssumptionsPanel project={s.project} onChange={s.patchProject} />
+            <SoftCostsPanel
+              project={s.project}
+              aaceClasses={s.ref.aaceClasses}
+              isBuilding={isBuilding}
+              sectionNumber={sSoftCosts}
+              onChange={s.patchProject}
+            />
+
+            {isBuilding && sGeneralContractor != null && (
+              <GeneralContractorPanel
+                project={s.project}
+                aaceClasses={s.ref.aaceClasses}
+                sectionNumber={sGeneralContractor}
+                onChange={s.patchProject}
+              />
+            )}
+
+            <ScheduleAssumptionsPanel project={s.project} sectionNumber={sSchedule} onChange={s.patchProject} />
 
             <OperatingCostsPanel
               items={s.opexItems}
               opexPctOfCapexPerYear={s.program.opexPctOfCapexPerYear}
               autoEstimate={s.autoOpexEstimate}
+              sectionNumber={sOperatingCosts}
               onAdd={s.addOpexItem}
               onChange={s.patchOpexItem}
               onDelete={s.deleteOpexItem}
@@ -122,21 +166,25 @@ export default function ProjectEditor({ projectId, currentUserEmail }: { project
 
             <RevenueProjectionPanel
               items={s.revenueItems}
+              sectionNumber={sRevenue}
               onAdd={s.addRevenueItem}
               onChange={s.patchRevenueItem}
               onDelete={s.deleteRevenueItem}
             />
+
+            {isHospital && sEquipment != null && (
+              <HospitalEquipmentPanel
+                items={s.equipmentItems}
+                sectionNumber={sEquipment}
+                onAdd={s.addEquipmentItem}
+                onChange={s.patchEquipmentItem}
+                onDelete={s.deleteEquipmentItem}
+              />
+            )}
           </fieldset>
 
           <div className="space-y-5 lg:sticky lg:top-5">
-            <BuildingCostBreakdownPanel
-              items={s.items}
-              cost={s.cost}
-              costIndex={s.costIndex}
-              designFeePct={s.project.designFeePct}
-              pmFeePct={s.project.pmFeePct}
-              permitFeePct={s.project.permitFeePct}
-            />
+            <BuildingCostBreakdownPanel items={s.items} cost={s.cost} costIndex={s.costIndex} />
             <SummaryPanel
               cost={s.cost}
               opex={s.opex}

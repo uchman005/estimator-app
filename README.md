@@ -28,8 +28,8 @@ onto that list:
   per UniFormat division (A–G), each division's `baseRateUsdPerM2`
   (`building_template_divisions`) × your GFA — the industry-standard "modeled
   square-foot/m² cost estimating" method: a per-division $/m² breakdown that
-  sums to a Sub-Total, on top of which Contractor Fee, Architect Fee and
-  Permitting are layered (see "Soft costs" below). Re-generating (a new GFA,
+  sums to a Sub-Total, on top of which the general-contractor cost buildup
+  below is layered. Re-generating (a new GFA,
   or switching templates) replaces this facility's prior generated rows —
   they're tagged `genTag: 'building-template'` so the regenerate can find and
   clean them up without touching any manually-added rows. A **buffer %**
@@ -53,6 +53,60 @@ onto that list:
   also the shape of every generated row after the fact: templates just
   provide sensible starting numbers, every field on a row stays directly
   editable afterward.
+
+**Buildings get a detailed general-contractor cost buildup; flat/vehicle
+facilities get a simpler fee layer.** `computeCost()` in `lib/calc/engine.ts`
+checks for at least one generated A–G row (`isBuilding`) and branches:
+
+- **Flat/vehicle facility** (no generated row) — unchanged from before:
+  Architect/Engineer Fee + General Contractor Cost + Permitting Fee (each a
+  % of the BOQ total, `SoftCostsPanel.tsx`), then Escalation, Fast-Track
+  Premium, and Contingency (picked from the 5 AACE-aligned levels via a
+  select, 5%–30%).
+- **Building** (at least one generated row) — the same three fees, plus a
+  full buildup in its own section (`GeneralContractorPanel.tsx`): Sub-
+  Contractor Markup and Mobilization Fee (each a % of the BOQ total),
+  Contractor Profit (a margin on the BOQ total + General Contractor Cost +
+  Sub-Contractor Markup + Mobilization combined), then — after Escalation
+  and Fast-Track Premium — Contingency (now **typed directly**, default
+  20%, clamped to the 5%–30% range the 5 AACE classes span, with the
+  *nearest* class's confidence band adopted automatically so the band
+  shown elsewhere never drifts from the % actually used), Commissioning Fee
+  (default 2%) and Construction Quality Control (default 5%, applied last,
+  on everything above it including contingency and commissioning).
+  `CostBreakdown` exposes every one of these as its own field — see
+  `SummaryPanel.tsx`/`BuildingCostBreakdownPanel.tsx`/
+  `FacilityPrintSummary.tsx` for where each lands in a facility's own
+  summary. A facility newly created from a building template (or generated
+  for the first time on an existing facility) gets `contingencyPctOverride`
+  defaulted to 20 automatically, rather than inheriting the flat-facility
+  default of 15% (Class 3).
+
+**Division D and G are labeled by what they actually are, not the bare
+UniFormat umbrella term.** A generated row's label used to read "D —
+Services" / "G — Building Sitework" — accurate UniFormat terminology, but
+opaque to read on a line item. `building_template_divisions.divisionName`
+(seeded in `db/seed.ts`) now reads **"Mechanical, Electrical & Plumbing
+(MEP)"** for D and **"Site Development & Utilities"** for G, across every
+template — still describing the division's *real* scope (D bundles
+plumbing/HVAC/fire/electrical together; it's deliberately not narrowed to
+just "Electrical", which would misrepresent the rest). The manual BOQ row's
+division picker (`UNIFORMAT_DIVISIONS` in `app/projects/[id]/components/
+types.ts`) got the same rename. This only affects *new* generations —
+`insertBuildingFromTemplate()` bakes the label into each row's `customLabel`
+at generation time, so an already-generated facility's existing rows keep
+whatever label they were generated with until regenerated.
+
+**Hospital equipment is its own section** (`HospitalEquipmentPanel.tsx`,
+shown only when `isHospitalFacility(project.facilityType)` in
+`lib/facilityTypes.ts` matches — a loose "hospital"/"clinic" match against
+the free-text type, since no seeded building template is literally named
+"Hospital"). Each row (`project_hospital_equipment`: label, `costUsd`,
+`commissioningPct`) is a flat capital cost plus its own commissioning % —
+deliberately **not** run through the general-contractor buildup above (no
+architect/contractor fee, no escalation, no contingency on it, since
+medical equipment is a separate procurement stream from the building
+works) — both add straight onto `cost.grandTotal` in `computeCost()`.
 
 **Every facility type that's actually a structure is backed by a building
 template** — not just the two clinics. Four starter templates are seeded,
@@ -372,11 +426,14 @@ app/
                         [template picker + GFA input + generate], BoqPanel + BoqRow
                         [division/label/qty/unit/rate — every row directly editable],
                         BuildingCostBreakdownPanel [the RSMeans-style division →
-                        Sub-Total → Contractor/Architect Fee → Total layout],
-                        SoftCostsPanel, ScheduleAssumptionsPanel, OperatingCostsPanel
+                        Sub-Total → general-contractor buildup → Total layout],
+                        SoftCostsPanel, GeneralContractorPanel [building-only — see
+                        "Pricing model" above], ScheduleAssumptionsPanel, OperatingCostsPanel
                         [itemized recurring cost, see project_opex_items below],
                         RevenueProjectionPanel [itemized revenue sources, see
-                        project_revenue_items below], SummaryPanel, SchedulePanel,
+                        project_revenue_items below], HospitalEquipmentPanel
+                        [hospital-only, see project_hospital_equipment below],
+                        SummaryPanel, SchedulePanel,
                         FacilityPrintSummary [the print-only "structural" handout])
                         + types.ts — location, funding, feasibility and
                         collaborators live on the program instead (see
@@ -435,6 +492,8 @@ instead of repeating hex codes.
 | `/api/projects/:id/opex-items/:itemId` | PATCH, DELETE | edit / remove a recurring cost line item | editor+ |
 | `/api/projects/:id/revenue-items` | POST | add a revenue-source line item (patient fees, pharmacy/lab, rental, grants, ...) | editor+ |
 | `/api/projects/:id/revenue-items/:itemId` | PATCH, DELETE | edit / remove a revenue-source line item | editor+ |
+| `/api/projects/:id/equipment` | POST | add a hospital-equipment line item (label, cost, commissioning %) | editor+ |
+| `/api/projects/:id/equipment/:itemId` | PATCH, DELETE | edit / remove a hospital-equipment line item | editor+ |
 | `/api/reference` | GET | countries+regions+FX, currencies, AACE classes, and the global building templates (with their division rates) | any signed-in user |
 | `/api/reference/countries` | POST | add a country (+ a default "National average" region) | any |
 | `/api/reference/countries/:id` | PATCH, DELETE | edit / remove a country | any |

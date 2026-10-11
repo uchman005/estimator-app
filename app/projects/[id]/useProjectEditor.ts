@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { computeCost, computeSchedule, computeFacilityOpex, computeFacilityRevenue, type ProjectItemLite, type ProjectSettings } from "@/lib/calc/engine";
+import { computeCost, computeSchedule, computeFacilityOpex, computeFacilityRevenue, type ProjectItemLite, type ProjectSettings, type HospitalEquipmentItemLite } from "@/lib/calc/engine";
 import { useSaveStatus } from "@/lib/useSaveStatus";
-import type { ItemRow, ProjectRow, ReferenceData, BuildingGenInfo, OpexItemRow, RevenueItemRow } from "./components/types";
+import type { ItemRow, ProjectRow, ReferenceData, BuildingGenInfo, OpexItemRow, RevenueItemRow, HospitalEquipmentItemRow } from "./components/types";
 
 interface ProgramSummary {
   id: number;
@@ -27,6 +27,7 @@ export function useProjectEditor(projectId: number) {
   const [items, setItems] = useState<ItemRow[]>([]);
   const [opexItems, setOpexItems] = useState<OpexItemRow[]>([]);
   const [revenueItems, setRevenueItems] = useState<RevenueItemRow[]>([]);
+  const [equipmentItems, setEquipmentItems] = useState<HospitalEquipmentItemRow[]>([]);
   const [role, setRole] = useState<"owner" | "editor" | "viewer" | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,6 +67,7 @@ export function useProjectEditor(projectId: number) {
     );
     setOpexItems(projData.opexItems as OpexItemRow[]);
     setRevenueItems(projData.revenueItems as RevenueItemRow[]);
+    setEquipmentItems(projData.equipmentItems as HospitalEquipmentItemRow[]);
     setLoading(false);
   }, [projectId]);
 
@@ -120,6 +122,11 @@ export function useProjectEditor(projectId: number) {
       escalationPct: program.escalationPct,
       contingencyPctOverride: project.contingencyPctOverride,
       fastTrackPremiumPct: project.fastTrackPremiumPct,
+      subContractorMarkupPct: project.subContractorMarkupPct,
+      mobilizationFeePct: project.mobilizationFeePct,
+      contractorProfitPct: project.contractorProfitPct,
+      commissioningFeePct: project.commissioningFeePct,
+      constructionQcPct: project.constructionQcPct,
       landMonths: project.landMonths,
       designMonths: project.designMonths,
       designPermitOverlapPct: project.designPermitOverlapPct,
@@ -129,7 +136,15 @@ export function useProjectEditor(projectId: number) {
     };
   }, [project, program, costIndex]);
 
-  const cost = useMemo(() => (settings && aace ? computeCost(itemsLite, settings, aace) : null), [itemsLite, settings, aace]);
+  const equipmentItemsLite: HospitalEquipmentItemLite[] = useMemo(
+    () => equipmentItems.map((it) => ({ costUsd: it.costUsd, commissioningPct: it.commissioningPct, isIncluded: it.isIncluded })),
+    [equipmentItems]
+  );
+
+  const cost = useMemo(
+    () => (settings && aace ? computeCost(itemsLite, settings, aace, equipmentItemsLite) : null),
+    [itemsLite, settings, aace, equipmentItemsLite]
+  );
   const schedule = useMemo(() => (settings ? computeSchedule(itemsLite, settings) : null), [itemsLite, settings]);
   // What the program would estimate THIS facility's opex at if it had no
   // itemized rows at all — shown as a live reference figure even once real
@@ -236,6 +251,26 @@ export function useProjectEditor(projectId: number) {
     await fetch(`/api/projects/${projectId}/revenue-items/${id}`, { method: "DELETE" });
   }
 
+  async function addEquipmentItem() {
+    const res = await fetch(`/api/projects/${projectId}/equipment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: "New equipment", costUsd: 0, commissioningPct: 0 }),
+    });
+    const row = await res.json();
+    setEquipmentItems((arr) => [...arr, row]);
+  }
+  function patchEquipmentItem(id: number, patch: Partial<HospitalEquipmentItemRow>) {
+    setEquipmentItems((arr) => arr.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+    trackDebounced(`equipment:${id}`, patch, (merged) =>
+      fetch(`/api/projects/${projectId}/equipment/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(merged) })
+    );
+  }
+  async function deleteEquipmentItem(id: number) {
+    setEquipmentItems((arr) => arr.filter((it) => it.id !== id));
+    await fetch(`/api/projects/${projectId}/equipment/${id}`, { method: "DELETE" });
+  }
+
   async function generateBuilding(input: { templateSlug: string; grossAreaM2: number; markupPct: number }) {
     setGenBusy(true);
     try {
@@ -261,11 +296,12 @@ export function useProjectEditor(projectId: number) {
   }
 
   return {
-    ref, project, program, country, regionName, fx, items, opexItems, revenueItems, loading, accessError, role, genInfo, genBusy, costIndex,
+    ref, project, program, country, regionName, fx, items, opexItems, revenueItems, equipmentItems, loading, accessError, role, genInfo, genBusy, costIndex,
     aace, buildingGfaM2, saveStatus,
     settings, cost, schedule, opex, autoOpexEstimate, revenue,
     patchProject, patchItem, addItem, deleteItem, generateBuilding, saveProgress,
     addOpexItem, patchOpexItem, deleteOpexItem,
     addRevenueItem, patchRevenueItem, deleteRevenueItem,
+    addEquipmentItem, patchEquipmentItem, deleteEquipmentItem,
   };
 }

@@ -31,6 +31,11 @@ function toFacilitySettings(
     escalationPct: program.escalationPct, // shared assumption across every facility on the site
     contingencyPctOverride: project.contingencyPctOverride,
     fastTrackPremiumPct: project.fastTrackPremiumPct,
+    subContractorMarkupPct: project.subContractorMarkupPct,
+    mobilizationFeePct: project.mobilizationFeePct,
+    contractorProfitPct: project.contractorProfitPct,
+    commissioningFeePct: project.commissioningFeePct,
+    constructionQcPct: project.constructionQcPct,
     landMonths: project.landMonths,
     designMonths: project.designMonths,
     designPermitOverlapPct: project.designPermitOverlapPct,
@@ -59,7 +64,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const facilities = full.facilities.map((f) => {
     if (!f.aace) return null; // AACE class not seeded — shouldn't happen, skip defensively rather than 500 the whole program
     const settings = toFacilitySettings(full.program, f.project, costIndex);
-    const cost = computeCost(f.items, settings, f.aace);
+    const cost = computeCost(f.items, settings, f.aace, f.equipmentItems);
     const schedule = computeSchedule(f.items, settings);
     const opex = computeFacilityOpex(f.opexItems, full.program.opexPctOfCapexPerYear, cost.grandTotal);
     const isItemizedOpex = f.opexItems.length > 0;

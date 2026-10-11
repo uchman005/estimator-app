@@ -38,6 +38,12 @@ export function SummaryPanel({
       <BreakdownRow label="Escalation / FX buffer" value={fmtUsd(cost.escalation)} />
       <BreakdownRow label="Fast-track premium" value={fmtUsd(cost.fastTrackPremium)} />
       <BreakdownRow label="Contingency" value={fmtUsd(cost.contingency)} />
+      {cost.commissioningFee > 0 && <BreakdownRow label="Commissioning fee" value={fmtUsd(cost.commissioningFee)} />}
+      {cost.constructionQc > 0 && <BreakdownRow label="Construction quality control" value={fmtUsd(cost.constructionQc)} />}
+      {cost.hospitalEquipmentCost > 0 && <BreakdownRow label="Hospital equipment" value={fmtUsd(cost.hospitalEquipmentCost)} />}
+      {cost.hospitalEquipmentCommissioning > 0 && (
+        <BreakdownRow label="Equipment commissioning" value={fmtUsd(cost.hospitalEquipmentCommissioning)} />
+      )}
       <BreakdownRow label="Facility subtotal" value={fmtUsd(cost.grandTotal)} strong />
       <p className="mt-2 text-[10.5px] text-muted">
         <b className="text-ink">Escalation / FX buffer</b> and <b className="text-ink">contingency</b> are different

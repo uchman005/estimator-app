@@ -13,8 +13,17 @@ import {
   projectItems,
   projectOpexItems,
   projectRevenueItems,
+  projectHospitalEquipment,
 } from "@/db/schema";
-import { generateBuildingFromTemplate, type ProjectItemLite, type OpexItemLite, type RevenueItemLite, type BuildingTemplateLite, type Phase } from "@/lib/calc/engine";
+import {
+  generateBuildingFromTemplate,
+  type ProjectItemLite,
+  type OpexItemLite,
+  type RevenueItemLite,
+  type HospitalEquipmentItemLite,
+  type BuildingTemplateLite,
+  type Phase,
+} from "@/lib/calc/engine";
 
 const BUILDING_GEN_TAG = "building-template";
 
@@ -131,6 +140,10 @@ function toRevenueItemsLite(items: (typeof projectRevenueItems.$inferSelect)[]):
   return items.map((it) => ({ annualAmountUsd: it.annualAmountUsd, isIncluded: it.isIncluded }));
 }
 
+function toEquipmentItemsLite(items: (typeof projectHospitalEquipment.$inferSelect)[]): HospitalEquipmentItemLite[] {
+  return items.map((it) => ({ costUsd: it.costUsd, commissioningPct: it.commissioningPct, isIncluded: it.isIncluded }));
+}
+
 function toItemsLite(items: (typeof projectItems.$inferSelect)[]): (ProjectItemLite & { id: number })[] {
   return items.map((it) => ({
     id: it.id,
@@ -160,6 +173,7 @@ export async function getProjectFull(projectId: number) {
   const itemsLite = toItemsLite(items);
   const opexItems = await db.select().from(projectOpexItems).where(eq(projectOpexItems.projectId, projectId));
   const revenueItems = await db.select().from(projectRevenueItems).where(eq(projectRevenueItems.projectId, projectId));
+  const equipmentItems = await db.select().from(projectHospitalEquipment).where(eq(projectHospitalEquipment.projectId, projectId));
 
   const location = await resolveLocation(program.countryId, program.regionId);
   const [aaceRow] = await db.select().from(aaceClasses).where(eq(aaceClasses.classNumber, project.aaceClass));
@@ -170,6 +184,7 @@ export async function getProjectFull(projectId: number) {
     items: itemsLite,
     opexItems,
     revenueItems,
+    equipmentItems,
     ...location,
     aace: aaceRow,
   };
@@ -194,6 +209,9 @@ export async function getProgramFull(programId: number) {
   const allRevenueItems = facilityIds.length
     ? await db.select().from(projectRevenueItems).where(inArray(projectRevenueItems.projectId, facilityIds))
     : [];
+  const allEquipmentItems = facilityIds.length
+    ? await db.select().from(projectHospitalEquipment).where(inArray(projectHospitalEquipment.projectId, facilityIds))
+    : [];
   const aaceRows = await db.select().from(aaceClasses);
   const aaceByNumber = new Map(aaceRows.map((a) => [a.classNumber, a]));
 
@@ -202,6 +220,7 @@ export async function getProgramFull(programId: number) {
     items: toItemsLite(allItems.filter((it) => it.projectId === project.id)),
     opexItems: toOpexItemsLite(allOpexItems.filter((it) => it.projectId === project.id)),
     revenueItems: toRevenueItemsLite(allRevenueItems.filter((it) => it.projectId === project.id)),
+    equipmentItems: toEquipmentItemsLite(allEquipmentItems.filter((it) => it.projectId === project.id)),
     aace: aaceByNumber.get(project.aaceClass),
   }));
 

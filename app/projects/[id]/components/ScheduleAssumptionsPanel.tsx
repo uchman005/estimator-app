@@ -2,9 +2,17 @@ import { Panel } from "@/components/ui/Panel";
 import { Field, NumField, Input } from "@/components/ui/Form";
 import type { ProjectRow } from "./types";
 
-export function ScheduleAssumptionsPanel({ project, onChange }: { project: ProjectRow; onChange: (patch: Partial<ProjectRow>) => void }) {
+export function ScheduleAssumptionsPanel({
+  project,
+  sectionNumber,
+  onChange,
+}: {
+  project: ProjectRow;
+  sectionNumber: number;
+  onChange: (patch: Partial<ProjectRow>) => void;
+}) {
   return (
-    <Panel title="06 — SCHEDULE ASSUMPTIONS">
+    <Panel title={`${String(sectionNumber).padStart(2, "0")} — SCHEDULE ASSUMPTIONS`}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <NumField label="Land & permitting" suffix="mo" value={project.landMonths} onChange={(v) => onChange({ landMonths: v })} />
         <NumField label="Design & engineering" suffix="mo" value={project.designMonths} onChange={(v) => onChange({ designMonths: v })} />

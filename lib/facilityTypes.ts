@@ -14,3 +14,12 @@ export const FLAT_FACILITY_TYPE_PRESETS = ["Ambulance"] as const;
 // Server-side fallback only (a request that somehow omits facilityType) —
 // not offered as a dropdown choice itself.
 export const DEFAULT_FACILITY_TYPE = "Facility";
+
+// Whether a facility's medical-equipment section (HospitalEquipmentPanel.tsx)
+// should show — matched loosely against the free-text facilityType rather
+// than an exact "Hospital" string, since the seeded building templates are
+// named "Remote Clinic"/"Alpha Clinic" (no template is literally "Hospital")
+// and a user can also just type "Hospital" via the free-text flat type.
+export function isHospitalFacility(facilityType: string): boolean {
+  return /hospital|clinic/i.test(facilityType);
+}

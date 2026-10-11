@@ -8,6 +8,7 @@ export function OperatingCostsPanel({
   items,
   opexPctOfCapexPerYear,
   autoEstimate,
+  sectionNumber,
   onAdd,
   onChange,
   onDelete,
@@ -15,6 +16,7 @@ export function OperatingCostsPanel({
   items: OpexItemRow[];
   opexPctOfCapexPerYear: number;
   autoEstimate: number;
+  sectionNumber: number;
   onAdd: () => void;
   onChange: (id: number, patch: Partial<OpexItemRow>) => void;
   onDelete: (id: number) => void;
@@ -22,7 +24,7 @@ export function OperatingCostsPanel({
   const includedTotal = items.filter((it) => it.isIncluded).reduce((s, it) => s + it.annualAmountUsd, 0);
 
   return (
-    <Panel title="07 — RECURRING OPERATING COSTS" eyebrow={`${fmtUsd(includedTotal)}/yr`}>
+    <Panel title={`${String(sectionNumber).padStart(2, "0")} — RECURRING OPERATING COSTS`} eyebrow={`${fmtUsd(includedTotal)}/yr`}>
       <p className="mb-2 text-[11.5px] text-muted">
         Annual running costs for this facility — salaries, maintenance, utilities. These roll up into the program&apos;s
         feasibility alongside every other facility&apos;s. Add none, and the program instead estimates this facility&apos;s

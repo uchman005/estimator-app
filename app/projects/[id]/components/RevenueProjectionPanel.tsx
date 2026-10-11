@@ -6,11 +6,13 @@ import { REVENUE_CATEGORIES, REVENUE_CATEGORY_LABEL, type RevenueItemRow, type R
 
 export function RevenueProjectionPanel({
   items,
+  sectionNumber,
   onAdd,
   onChange,
   onDelete,
 }: {
   items: RevenueItemRow[];
+  sectionNumber: number;
   onAdd: () => void;
   onChange: (id: number, patch: Partial<RevenueItemRow>) => void;
   onDelete: (id: number) => void;
@@ -18,7 +20,7 @@ export function RevenueProjectionPanel({
   const includedTotal = items.filter((it) => it.isIncluded).reduce((s, it) => s + it.annualAmountUsd, 0);
 
   return (
-    <Panel title="08 — REVENUE PROJECTION" eyebrow={`${fmtUsd(includedTotal)}/yr`}>
+    <Panel title={`${String(sectionNumber).padStart(2, "0")} — REVENUE PROJECTION`} eyebrow={`${fmtUsd(includedTotal)}/yr`}>
       <p className="mb-2 text-[11.5px] text-muted">
         What this facility itself generates each year — patient/service fees, pharmacy or lab income, rental or
         ancillary income, grants. These roll up into the program&apos;s feasibility alongside every other facility&apos;s.

@@ -19,6 +19,11 @@ function toSettings(full: NonNullable<Awaited<ReturnType<typeof getProjectFull>>
     escalationPct: program.escalationPct, // shared assumption, set on the parent program
     contingencyPctOverride: project.contingencyPctOverride,
     fastTrackPremiumPct: project.fastTrackPremiumPct,
+    subContractorMarkupPct: project.subContractorMarkupPct,
+    mobilizationFeePct: project.mobilizationFeePct,
+    contractorProfitPct: project.contractorProfitPct,
+    commissioningFeePct: project.commissioningFeePct,
+    constructionQcPct: project.constructionQcPct,
     landMonths: project.landMonths,
     designMonths: project.designMonths,
     designPermitOverlapPct: project.designPermitOverlapPct,
@@ -40,7 +45,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!full.aace) return NextResponse.json({ error: "AACE class not seeded" }, { status: 500 });
 
   const settings = toSettings(full);
-  const cost = computeCost(full.items, settings, full.aace);
+  const cost = computeCost(full.items, settings, full.aace, full.equipmentItems);
   const schedule = computeSchedule(full.items, settings);
 
   return NextResponse.json({
@@ -48,6 +53,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     program: full.program,
     items: full.items,
     opexItems: full.opexItems,
+    equipmentItems: full.equipmentItems,
     revenueItems: full.revenueItems,
     country: full.country,
     region: full.region,
@@ -76,6 +82,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     "designFeePct", "pmFeePct", "permitFeePct",
     "contingencyPctOverride", "fastTrackPremiumPct", "landMonths", "designMonths",
     "designPermitOverlapPct", "commissionMonths", "startDate", "constructionMonthsOverride",
+    "subContractorMarkupPct", "mobilizationFeePct", "contractorProfitPct", "commissioningFeePct", "constructionQcPct",
   ];
   const patch: Record<string, unknown> = {};
   for (const key of allowed) if (key in body) patch[key] = body[key];
